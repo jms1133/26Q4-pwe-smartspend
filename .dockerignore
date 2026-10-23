@@ -1,0 +1,6 @@
+# Dart & Flutter Build-Caches ignorieren
+.dart_tool/
+.pub-cache/
+build/
+.packages
+pubspec.lock
