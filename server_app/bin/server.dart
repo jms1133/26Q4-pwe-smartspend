@@ -3,6 +3,9 @@ import 'package:shelf/shelf.dart';
 import 'package:shelf/shelf_io.dart' as shelf_io;
 import 'package:shelf_router/shelf_router.dart';
 import 'dart:convert';
+import 'package:sqlite3/sqlite3.dart';
+import 'package:server_app/db/database.dart';
+import 'package:server_app/handlers/expense_handlers.dart';
 
 Middleware handleCors() {
   return (Handler handler) {
@@ -24,11 +27,16 @@ Middleware handleCors() {
   };
 }
 
-// Configure routes.
-final _router = Router()
-  ..get('/', _rootHandler)
-  ..get('/echo/<message>', _echoHandler)
-  ..post('/chat', _chatHandler);
+Router buildRouter(Database db) {
+  return Router()
+    ..get('/', _rootHandler)
+    ..get('/echo/<message>', _echoHandler)
+    ..post('/chat', _chatHandler)
+    ..get('/expenses', (Request req) => listExpensesHandler(req, db))
+    ..post('/expenses', (Request req) => createExpenseHandler(req, db))
+    ..put('/expenses/<id>', (Request req, String id) => updateExpenseHandler(req, db, id))
+    ..delete('/expenses/<id>', (Request req, String id) => deleteExpenseHandler(req, db, id));
+}
 
 Response _rootHandler(Request req) {
   return Response.ok('Hello, World!\n');
@@ -115,14 +123,21 @@ void main(List<String> args) async {
   // Use any available host or container IP (usually `0.0.0.0`).
   final ip = InternetAddress.anyIPv4;
 
+  // Open the SQLite file once at startup. The same Database instance is
+  // reused across all requests — sqlite3 handles concurrent access safely
+  // for a single-process server like this.
+  final dbPath = Platform.environment['DB_PATH'] ?? 'smart_spend.db';
+  final db = openExpenseDatabase(path: dbPath);
+  final router = buildRouter(db);
+
   // Configure a pipeline that logs requests.
   final handler = Pipeline()
       .addMiddleware(logRequests())
       .addMiddleware(handleCors())
-      .addHandler(_router.call);
+      .addHandler(router.call);
 
   // For running in containers, we respect the PORT environment variable.
-  final port = int.parse(Platform.environment['PORT'] ?? '8081');
+  final port = int.parse(Platform.environment['PORT'] ?? '8082');
   
   // KORREKTUR: 'handler' statt 'pipeline' übergeben und 'ip' / 'port' nutzen
   final server = await shelf_io.serve(handler, ip, port);
