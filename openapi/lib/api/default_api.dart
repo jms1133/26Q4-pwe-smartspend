@@ -67,4 +67,205 @@ class DefaultApi {
     }
     return null;
   }
+
+  /// Create a new expense
+  ///
+  /// Note: This method returns the HTTP [Response].
+  ///
+  /// Parameters:
+  ///
+  /// * [ExpenseInput] expenseInput (required):
+  Future<Response> createExpenseWithHttpInfo(ExpenseInput expenseInput,) async {
+    // ignore: prefer_const_declarations
+    final path = r'/expenses';
+
+    // ignore: prefer_final_locals
+    Object? postBody = expenseInput;
+
+    final queryParams = <QueryParam>[];
+    final headerParams = <String, String>{};
+    final formParams = <String, String>{};
+
+    const contentTypes = <String>['application/json'];
+
+
+    return apiClient.invokeAPI(
+      path,
+      'POST',
+      queryParams,
+      postBody,
+      headerParams,
+      formParams,
+      contentTypes.isEmpty ? null : contentTypes.first,
+    );
+  }
+
+  /// Create a new expense
+  ///
+  /// Parameters:
+  ///
+  /// * [ExpenseInput] expenseInput (required):
+  Future<Expense?> createExpense(ExpenseInput expenseInput,) async {
+    final response = await createExpenseWithHttpInfo(expenseInput,);
+    if (response.statusCode >= HttpStatus.badRequest) {
+      throw ApiException(response.statusCode, await _decodeBodyBytes(response));
+    }
+    // When a remote server returns no body with a status of 204, we shall not decode it.
+    // At the time of writing this, `dart:convert` will throw an "Unexpected end of input"
+    // FormatException when trying to decode an empty string.
+    if (response.body.isNotEmpty && response.statusCode != HttpStatus.noContent) {
+      return await apiClient.deserializeAsync(await _decodeBodyBytes(response), 'Expense',) as Expense;
+    
+    }
+    return null;
+  }
+
+  /// Delete an expense
+  ///
+  /// Note: This method returns the HTTP [Response].
+  ///
+  /// Parameters:
+  ///
+  /// * [int] id (required):
+  Future<Response> deleteExpenseWithHttpInfo(int id,) async {
+    // ignore: prefer_const_declarations
+    final path = r'/expenses/{id}'
+      .replaceAll('{id}', id.toString());
+
+    // ignore: prefer_final_locals
+    Object? postBody;
+
+    final queryParams = <QueryParam>[];
+    final headerParams = <String, String>{};
+    final formParams = <String, String>{};
+
+    const contentTypes = <String>[];
+
+
+    return apiClient.invokeAPI(
+      path,
+      'DELETE',
+      queryParams,
+      postBody,
+      headerParams,
+      formParams,
+      contentTypes.isEmpty ? null : contentTypes.first,
+    );
+  }
+
+  /// Delete an expense
+  ///
+  /// Parameters:
+  ///
+  /// * [int] id (required):
+  Future<void> deleteExpense(int id,) async {
+    final response = await deleteExpenseWithHttpInfo(id,);
+    if (response.statusCode >= HttpStatus.badRequest) {
+      throw ApiException(response.statusCode, await _decodeBodyBytes(response));
+    }
+  }
+
+  /// List all expenses
+  ///
+  /// Note: This method returns the HTTP [Response].
+  Future<Response> listExpensesWithHttpInfo() async {
+    // ignore: prefer_const_declarations
+    final path = r'/expenses';
+
+    // ignore: prefer_final_locals
+    Object? postBody;
+
+    final queryParams = <QueryParam>[];
+    final headerParams = <String, String>{};
+    final formParams = <String, String>{};
+
+    const contentTypes = <String>[];
+
+
+    return apiClient.invokeAPI(
+      path,
+      'GET',
+      queryParams,
+      postBody,
+      headerParams,
+      formParams,
+      contentTypes.isEmpty ? null : contentTypes.first,
+    );
+  }
+
+  /// List all expenses
+  Future<List<Expense>?> listExpenses() async {
+    final response = await listExpensesWithHttpInfo();
+    if (response.statusCode >= HttpStatus.badRequest) {
+      throw ApiException(response.statusCode, await _decodeBodyBytes(response));
+    }
+    // When a remote server returns no body with a status of 204, we shall not decode it.
+    // At the time of writing this, `dart:convert` will throw an "Unexpected end of input"
+    // FormatException when trying to decode an empty string.
+    if (response.body.isNotEmpty && response.statusCode != HttpStatus.noContent) {
+      final responseBody = await _decodeBodyBytes(response);
+      return (await apiClient.deserializeAsync(responseBody, 'List<Expense>') as List)
+        .cast<Expense>()
+        .toList(growable: false);
+
+    }
+    return null;
+  }
+
+  /// Update an existing expense
+  ///
+  /// Note: This method returns the HTTP [Response].
+  ///
+  /// Parameters:
+  ///
+  /// * [int] id (required):
+  ///
+  /// * [ExpenseInput] expenseInput (required):
+  Future<Response> updateExpenseWithHttpInfo(int id, ExpenseInput expenseInput,) async {
+    // ignore: prefer_const_declarations
+    final path = r'/expenses/{id}'
+      .replaceAll('{id}', id.toString());
+
+    // ignore: prefer_final_locals
+    Object? postBody = expenseInput;
+
+    final queryParams = <QueryParam>[];
+    final headerParams = <String, String>{};
+    final formParams = <String, String>{};
+
+    const contentTypes = <String>['application/json'];
+
+
+    return apiClient.invokeAPI(
+      path,
+      'PUT',
+      queryParams,
+      postBody,
+      headerParams,
+      formParams,
+      contentTypes.isEmpty ? null : contentTypes.first,
+    );
+  }
+
+  /// Update an existing expense
+  ///
+  /// Parameters:
+  ///
+  /// * [int] id (required):
+  ///
+  /// * [ExpenseInput] expenseInput (required):
+  Future<Expense?> updateExpense(int id, ExpenseInput expenseInput,) async {
+    final response = await updateExpenseWithHttpInfo(id, expenseInput,);
+    if (response.statusCode >= HttpStatus.badRequest) {
+      throw ApiException(response.statusCode, await _decodeBodyBytes(response));
+    }
+    // When a remote server returns no body with a status of 204, we shall not decode it.
+    // At the time of writing this, `dart:convert` will throw an "Unexpected end of input"
+    // FormatException when trying to decode an empty string.
+    if (response.body.isNotEmpty && response.statusCode != HttpStatus.noContent) {
+      return await apiClient.deserializeAsync(await _decodeBodyBytes(response), 'Expense',) as Expense;
+    
+    }
+    return null;
+  }
 }

@@ -182,6 +182,10 @@ class ApiClient {
           return valueString == 'true' || valueString == '1';
         case 'DateTime':
           return value is DateTime ? value : DateTime.tryParse(value);
+        case 'Expense':
+          return Expense.fromJson(value);
+        case 'ExpenseInput':
+          return ExpenseInput.fromJson(value);
         case 'Message':
           return Message.fromJson(value);
         default:
