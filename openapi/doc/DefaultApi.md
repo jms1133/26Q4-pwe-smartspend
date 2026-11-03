@@ -10,6 +10,7 @@ All URIs are relative to *http://localhost*
 Method | HTTP request | Description
 ------------- | ------------- | -------------
 [**chat**](DefaultApi.md#chat) | **POST** /chat | Send a message to ChatGPT
+[**classifyText**](DefaultApi.md#classifytext) | **POST** /classify | Classify raw expense text into a structured ExpenseInput
 [**createExpense**](DefaultApi.md#createexpense) | **POST** /expenses | Create a new expense
 [**deleteExpense**](DefaultApi.md#deleteexpense) | **DELETE** /expenses/{id} | Delete an expense
 [**listExpenses**](DefaultApi.md#listexpenses) | **GET** /expenses | List all expenses
@@ -45,6 +46,47 @@ Name | Type | Description  | Notes
 ### Return type
 
 [**Message**](Message.md)
+
+### Authorization
+
+No authorization required
+
+### HTTP request headers
+
+ - **Content-Type**: application/json
+ - **Accept**: application/json
+
+[[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
+
+# **classifyText**
+> ExpenseInput classifyText(classifyInput)
+
+Classify raw expense text into a structured ExpenseInput
+
+### Example
+```dart
+import 'package:openapi/api.dart';
+
+final api_instance = DefaultApi();
+final classifyInput = ClassifyInput(); // ClassifyInput | 
+
+try {
+    final result = api_instance.classifyText(classifyInput);
+    print(result);
+} catch (e) {
+    print('Exception when calling DefaultApi->classifyText: $e\n');
+}
+```
+
+### Parameters
+
+Name | Type | Description  | Notes
+------------- | ------------- | ------------- | -------------
+ **classifyInput** | [**ClassifyInput**](ClassifyInput.md)|  | 
+
+### Return type
+
+[**ExpenseInput**](ExpenseInput.md)
 
 ### Authorization
 

@@ -60,6 +60,7 @@ All URIs are relative to *http://localhost*
 Class | Method | HTTP request | Description
 ------------ | ------------- | ------------- | -------------
 *DefaultApi* | [**chat**](doc//DefaultApi.md#chat) | **POST** /chat | Send a message to ChatGPT
+*DefaultApi* | [**classifyText**](doc//DefaultApi.md#classifytext) | **POST** /classify | Classify raw expense text into a structured ExpenseInput
 *DefaultApi* | [**createExpense**](doc//DefaultApi.md#createexpense) | **POST** /expenses | Create a new expense
 *DefaultApi* | [**deleteExpense**](doc//DefaultApi.md#deleteexpense) | **DELETE** /expenses/{id} | Delete an expense
 *DefaultApi* | [**listExpenses**](doc//DefaultApi.md#listexpenses) | **GET** /expenses | List all expenses
@@ -68,6 +69,7 @@ Class | Method | HTTP request | Description
 
 ## Documentation For Models
 
+ - [ClassifyInput](doc//ClassifyInput.md)
  - [Expense](doc//Expense.md)
  - [ExpenseInput](doc//ExpenseInput.md)
  - [Message](doc//Message.md)

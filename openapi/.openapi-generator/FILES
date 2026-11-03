@@ -2,6 +2,7 @@
 .travis.yml
 README.md
 analysis_options.yaml
+doc/ClassifyInput.md
 doc/DefaultApi.md
 doc/Expense.md
 doc/ExpenseInput.md
@@ -17,7 +18,9 @@ lib/auth/authentication.dart
 lib/auth/http_basic_auth.dart
 lib/auth/http_bearer_auth.dart
 lib/auth/oauth.dart
+lib/model/classify_input.dart
 lib/model/expense.dart
 lib/model/expense_input.dart
 lib/model/message.dart
 pubspec.yaml
+test/classify_input_test.dart

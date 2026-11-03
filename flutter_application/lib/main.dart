@@ -212,8 +212,10 @@ class _ExpenseFormScreenState extends State<ExpenseFormScreen> {
   late final TextEditingController _amountController;
   late final TextEditingController _descriptionController;
   late final TextEditingController _subcategoryController;
+  final _nlController = TextEditingController();
   late ExpenseInputCategoryEnum _category;
   bool _submitting = false;
+  bool _classifying = false;
 
   bool get _isEditing => widget.existing != null;
 
@@ -243,7 +245,50 @@ class _ExpenseFormScreenState extends State<ExpenseFormScreen> {
     _amountController.dispose();
     _descriptionController.dispose();
     _subcategoryController.dispose();
+    _nlController.dispose();
     super.dispose();
+  }
+
+  Future<void> _classify() async {
+    final text = _nlController.text.trim();
+    if (text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Type what you spent first.')),
+      );
+      return;
+    }
+
+    setState(() => _classifying = true);
+
+    final api = DefaultApi(context.read<ApiClient>());
+    try {
+      final parsed = await api.classifyText(ClassifyInput(text: text));
+      if (!mounted) return;
+      if (parsed == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not parse that expense.')),
+        );
+        return;
+      }
+      setState(() {
+        _titleController.text = parsed.title;
+        _amountController.text = parsed.amount.toString();
+        _category = ExpenseInputCategoryEnum.values.firstWhere(
+          (c) => c.value == parsed.category.value,
+          orElse: () => ExpenseInputCategoryEnum.other,
+        );
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Review the fields, then add.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('AI parsing failed: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _classifying = false);
+    }
   }
 
   Future<void> _submit() async {
@@ -290,6 +335,34 @@ class _ExpenseFormScreenState extends State<ExpenseFormScreen> {
           key: _formKey,
           child: ListView(
             children: [
+              if (!_isEditing) ...[
+                TextField(
+                  controller: _nlController,
+                  decoration: const InputDecoration(
+                    labelText: 'Describe your expense',
+                    hintText: 'e.g. I spent 15 euros on cinema tickets',
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.auto_awesome),
+                  ),
+                  onSubmitted: (_) => _classifying ? null : _classify(),
+                ),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: _classifying ? null : _classify,
+                  icon: _classifying
+                      ? const SizedBox(
+                          height: 16,
+                          width: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.auto_awesome),
+                  label: Text(_classifying ? 'Parsing…' : 'Parse with AI'),
+                ),
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 16),
+                  child: Divider(),
+                ),
+              ],
               TextFormField(
                 controller: _titleController,
                 decoration: const InputDecoration(

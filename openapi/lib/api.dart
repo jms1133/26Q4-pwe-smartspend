@@ -30,6 +30,7 @@ part 'auth/http_bearer_auth.dart';
 
 part 'api/default_api.dart';
 
+part 'model/classify_input.dart';
 part 'model/expense.dart';
 part 'model/expense_input.dart';
 part 'model/message.dart';
