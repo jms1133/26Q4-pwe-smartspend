@@ -3,3 +3,6 @@
 .dart_tool/
 pubspec.lock
 secrets.json
+
+# SQLite database file (local dev data, not source)
+*.db

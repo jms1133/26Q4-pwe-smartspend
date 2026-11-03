@@ -1,6 +1,6 @@
 openapi: 3.0.0
 info:
-  title: ChatGPT Web App API
+  title: Smart Spend API
   version: 1.0.0
 paths:
   /chat:
@@ -20,6 +20,70 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Message'
+  /expenses:
+    get:
+      summary: List all expenses
+      operationId: listExpenses
+      responses:
+        '200':
+          description: A list of expenses
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Expense'
+    post:
+      summary: Create a new expense
+      operationId: createExpense
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExpenseInput'
+      responses:
+        '201':
+          description: The created expense
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Expense'
+  /expenses/{id}:
+    put:
+      summary: Update an existing expense
+      operationId: updateExpense
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExpenseInput'
+      responses:
+        '200':
+          description: The updated expense
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Expense'
+    delete:
+      summary: Delete an expense
+      operationId: deleteExpense
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '204':
+          description: Expense deleted successfully
 components:
   schemas:
     Message:
@@ -40,3 +104,50 @@ components:
             - user
             - system
             - ai
+    ExpenseInput:
+      type: object
+      required:
+        - title
+        - category
+        - amount
+      properties:
+        title:
+          type: string
+        category:
+          type: string
+          enum:
+            - food
+            - transport
+            - entertainment
+            - housing
+            - health
+            - insurance
+            - shopping
+            - subscriptions
+            - education
+            - other
+        amount:
+          type: number
+          format: double
+        description:
+          type: string
+        subcategory:
+          type: string
+          description: >
+            Optional free-text secondary tag for expenses that span two
+            categories (e.g. "Hundehaftpflichtversicherung" is insurance
+            but also pet-related). Not enum-constrained on purpose —
+            revisit if this needs structure later.
+    Expense:
+      allOf:
+        - $ref: '#/components/schemas/ExpenseInput'
+        - type: object
+          required:
+            - id
+            - timestamp
+          properties:
+            id:
+              type: integer
+            timestamp:
+              type: string
+              format: date-time
