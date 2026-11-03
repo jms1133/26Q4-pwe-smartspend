@@ -68,6 +68,58 @@ class DefaultApi {
     return null;
   }
 
+  /// Classify raw expense text into a structured ExpenseInput
+  ///
+  /// Note: This method returns the HTTP [Response].
+  ///
+  /// Parameters:
+  ///
+  /// * [ClassifyInput] classifyInput (required):
+  Future<Response> classifyTextWithHttpInfo(ClassifyInput classifyInput,) async {
+    // ignore: prefer_const_declarations
+    final path = r'/classify';
+
+    // ignore: prefer_final_locals
+    Object? postBody = classifyInput;
+
+    final queryParams = <QueryParam>[];
+    final headerParams = <String, String>{};
+    final formParams = <String, String>{};
+
+    const contentTypes = <String>['application/json'];
+
+
+    return apiClient.invokeAPI(
+      path,
+      'POST',
+      queryParams,
+      postBody,
+      headerParams,
+      formParams,
+      contentTypes.isEmpty ? null : contentTypes.first,
+    );
+  }
+
+  /// Classify raw expense text into a structured ExpenseInput
+  ///
+  /// Parameters:
+  ///
+  /// * [ClassifyInput] classifyInput (required):
+  Future<ExpenseInput?> classifyText(ClassifyInput classifyInput,) async {
+    final response = await classifyTextWithHttpInfo(classifyInput,);
+    if (response.statusCode >= HttpStatus.badRequest) {
+      throw ApiException(response.statusCode, await _decodeBodyBytes(response));
+    }
+    // When a remote server returns no body with a status of 204, we shall not decode it.
+    // At the time of writing this, `dart:convert` will throw an "Unexpected end of input"
+    // FormatException when trying to decode an empty string.
+    if (response.body.isNotEmpty && response.statusCode != HttpStatus.noContent) {
+      return await apiClient.deserializeAsync(await _decodeBodyBytes(response), 'ExpenseInput',) as ExpenseInput;
+    
+    }
+    return null;
+  }
+
   /// Create a new expense
   ///
   /// Note: This method returns the HTTP [Response].

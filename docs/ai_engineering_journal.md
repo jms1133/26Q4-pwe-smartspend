@@ -167,3 +167,48 @@ run against a `FakeDefaultApi` subclass, so all state logic is tested with no
 running server or database — the fake stands in like an in-memory stub table.
 
 ---
+
+## Entry 5 — Phase 4 AI: Defensive Parsing & the `/classify` Adapter
+
+**Context**
+Phase 4 finally integrates `gpt-6-luna`. The design decision was *not* to let the
+AI write directly to the database. Instead a new `POST /classify` endpoint takes
+raw text, asks the model to return structured JSON, and returns an
+`ExpenseInput` for the user to review before saving through the already-tested
+`POST /expenses` path. This keeps the AI as a thin adapter (raw text →
+structured input) over the Phase 2 persistence logic, exactly as planned in
+Entry 1.
+
+**Interaction**
+Three sub-problems were worked through:
+
+1. **Spec first.** A new `ClassifyInput` schema (`{ text: string }`) and the
+   `/classify` path (operationId `classifyText`, returning `ExpenseInput`) were
+   added to `api.yaml` — the single source of truth — then the OpenAPI generator
+   was re-run so the Flutter client gained a typed `classifyText()` method.
+
+2. **Secrets without per-session env injection.** Loading the API key via an
+   environment variable meant re-exporting it every new terminal session. We
+   adopted a precedence chain in `AiService.apiKey`: read a git-ignored
+   `secrets.json` next to the server first, then fall back to `OPENAI_API_KEY`
+   (for Docker/CI). If neither exists it *throws* at call time — an explicit
+   failure beats silently sending an unauthenticated request. The key is cached
+   after the first successful load.
+
+3. **Treating model output as untrusted.** An LLM may wrap JSON in prose or code
+   fences, invent categories, or return the amount as a string. The static
+   `AiService.parseExpenseJson` defends against all three: it extracts the first
+   `{...}` block, coerces string amounts (including `"3,50"` comma decimals),
+   rejects missing/zero amounts and empty titles, and falls back to the `other`
+   category for anything unknown rather than crashing.
+
+**Reflection**
+The valuable lesson is that an AI boundary is an *untrusted input boundary* — the
+same mindset as validating an HTTP request body (Entry 2), just with fuzzier
+input. Isolating the fragile logic into a pure static function made it directly
+unit-testable without any network or key: 7 tests cover clean JSON, prose-wrapped
+JSON, unknown categories, comma-decimal amounts, and each rejection path, all
+passing via `dart test`. Keeping the AI feeding *into* the existing create flow
+(rather than beside it) meant Phase 4 added almost no new persistence risk.
+
+---

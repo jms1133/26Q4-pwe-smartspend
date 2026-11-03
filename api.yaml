@@ -20,6 +20,23 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Message'
+  /classify:
+    post:
+      summary: Classify raw expense text into a structured ExpenseInput
+      operationId: classifyText
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClassifyInput'
+      responses:
+        '200':
+          description: The structured expense parsed from the text
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExpenseInput'
   /expenses:
     get:
       summary: List all expenses
@@ -104,6 +121,17 @@ components:
             - user
             - system
             - ai
+    ClassifyInput:
+      type: object
+      required:
+        - text
+      properties:
+        text:
+          type: string
+          description: >
+            Raw natural-language expense text to be parsed by the AI model
+            into a structured ExpenseInput (e.g. "I spent 15 euros on cinema
+            tickets").
     ExpenseInput:
       type: object
       required:

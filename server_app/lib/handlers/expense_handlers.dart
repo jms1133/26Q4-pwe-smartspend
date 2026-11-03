@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:shelf/shelf.dart';
 import 'package:sqlite3/sqlite3.dart';
 import 'package:openapi/api.dart';
+import 'package:server_app/services/ai_service.dart';
 
 /// Converts a single SQLite [Row] into the generated [Expense] model.
 ///
@@ -137,6 +138,38 @@ Future<Response> updateExpenseHandler(
   } catch (e) {
     print('Error in updateExpenseHandler: $e');
     return Response.internalServerError(body: 'Failed to update expense.');
+  }
+}
+
+/// Parses raw natural-language expense text into a structured [ExpenseInput]
+/// via the AI model. Returns the parsed input for the client to review before
+/// saving it through the normal `POST /expenses` flow.
+Future<Response> classifyHandler(Request request, AiService aiService) async {
+  try {
+    final payload = await request.readAsString();
+    final json = jsonDecode(payload);
+
+    if (json is! Map || json['text'] is! String) {
+      return Response.badRequest(body: 'Missing required field "text".');
+    }
+
+    final text = (json['text'] as String).trim();
+    if (text.isEmpty) {
+      return Response.badRequest(body: 'Field "text" must not be empty.');
+    }
+
+    final input = await aiService.classifyExpense(text);
+
+    return Response.ok(
+      jsonEncode(input.toJson()),
+      headers: {'Content-Type': 'application/json'},
+    );
+  } on AiServiceException catch (e) {
+    print('Error in classifyHandler: $e');
+    return Response.internalServerError(body: 'Failed to classify expense.');
+  } catch (e) {
+    print('Error in classifyHandler: $e');
+    return Response.internalServerError(body: 'Failed to classify expense.');
   }
 }
 
