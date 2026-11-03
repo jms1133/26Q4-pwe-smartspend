@@ -84,7 +84,7 @@ class AiService {
     final credentials = _credentials;
     final request = await _httpClient
         .postUrl(Uri.parse('https://api.openai.com/v1/responses'));
-    request.headers.set('Content-Type', 'application/json');
+    request.headers.set('Content-Type', 'application/json; charset=utf-8');
     request.headers.set('Authorization', 'Bearer ${credentials.apiKey}');
     final organizationId = credentials.organizationId;
     if (organizationId != null) {
@@ -94,11 +94,14 @@ class AiService {
     if (projectId != null) {
       request.headers.set('OpenAI-Project', projectId);
     }
-    request.write(jsonEncode({
+    // Encode the body as UTF-8 bytes explicitly. HttpClientRequest.write
+    // defaults to Latin-1, which corrupts non-Latin-1 characters (umlauts,
+    // €, etc.) and makes the API reject the request with a 400.
+    request.add(utf8.encode(jsonEncode({
       'model': 'gpt-6-luna',
       'input': input,
       'store': true,
-    }));
+    })));
 
     final response = await request.close();
     final body = await response.transform(utf8.decoder).join();
