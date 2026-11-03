@@ -121,7 +121,10 @@ components:
             - entertainment
             - housing
             - health
+            - insurance
             - shopping
+            - subscriptions
+            - education
             - other
         amount:
           type: number

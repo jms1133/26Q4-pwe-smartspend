@@ -21,5 +21,3 @@ lib/model/expense.dart
 lib/model/expense_input.dart
 lib/model/message.dart
 pubspec.yaml
-test/expense_input_test.dart
-test/expense_test.dart

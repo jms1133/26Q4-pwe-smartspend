@@ -4,7 +4,7 @@ import 'package:openapi/api.dart';
 
 void main() {
   // Erzeugt ein Objekt vom Typ ApiClient mit der URL des lokalen Servers
-  final apiClient = ApiClient(basePath: 'http://localhost:8081');
+  final apiClient = ApiClient(basePath: 'http://localhost:8082');
 
   runApp(
     // Erweitert den Widget-Baum um ein Provider-Widget

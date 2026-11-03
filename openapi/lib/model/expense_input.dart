@@ -176,7 +176,10 @@ class ExpenseInputCategoryEnum {
   static const entertainment = ExpenseInputCategoryEnum._(r'entertainment');
   static const housing = ExpenseInputCategoryEnum._(r'housing');
   static const health = ExpenseInputCategoryEnum._(r'health');
+  static const insurance = ExpenseInputCategoryEnum._(r'insurance');
   static const shopping = ExpenseInputCategoryEnum._(r'shopping');
+  static const subscriptions = ExpenseInputCategoryEnum._(r'subscriptions');
+  static const education = ExpenseInputCategoryEnum._(r'education');
   static const other = ExpenseInputCategoryEnum._(r'other');
 
   /// List of all possible values in this [enum][ExpenseInputCategoryEnum].
@@ -186,7 +189,10 @@ class ExpenseInputCategoryEnum {
     entertainment,
     housing,
     health,
+    insurance,
     shopping,
+    subscriptions,
+    education,
     other,
   ];
 
@@ -231,7 +237,10 @@ class ExpenseInputCategoryEnumTypeTransformer {
         case r'entertainment': return ExpenseInputCategoryEnum.entertainment;
         case r'housing': return ExpenseInputCategoryEnum.housing;
         case r'health': return ExpenseInputCategoryEnum.health;
+        case r'insurance': return ExpenseInputCategoryEnum.insurance;
         case r'shopping': return ExpenseInputCategoryEnum.shopping;
+        case r'subscriptions': return ExpenseInputCategoryEnum.subscriptions;
+        case r'education': return ExpenseInputCategoryEnum.education;
         case r'other': return ExpenseInputCategoryEnum.other;
         default:
           if (!allowNull) {

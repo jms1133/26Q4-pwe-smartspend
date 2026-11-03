@@ -192,7 +192,10 @@ class ExpenseCategoryEnum {
   static const entertainment = ExpenseCategoryEnum._(r'entertainment');
   static const housing = ExpenseCategoryEnum._(r'housing');
   static const health = ExpenseCategoryEnum._(r'health');
+  static const insurance = ExpenseCategoryEnum._(r'insurance');
   static const shopping = ExpenseCategoryEnum._(r'shopping');
+  static const subscriptions = ExpenseCategoryEnum._(r'subscriptions');
+  static const education = ExpenseCategoryEnum._(r'education');
   static const other = ExpenseCategoryEnum._(r'other');
 
   /// List of all possible values in this [enum][ExpenseCategoryEnum].
@@ -202,7 +205,10 @@ class ExpenseCategoryEnum {
     entertainment,
     housing,
     health,
+    insurance,
     shopping,
+    subscriptions,
+    education,
     other,
   ];
 
@@ -247,7 +253,10 @@ class ExpenseCategoryEnumTypeTransformer {
         case r'entertainment': return ExpenseCategoryEnum.entertainment;
         case r'housing': return ExpenseCategoryEnum.housing;
         case r'health': return ExpenseCategoryEnum.health;
+        case r'insurance': return ExpenseCategoryEnum.insurance;
         case r'shopping': return ExpenseCategoryEnum.shopping;
+        case r'subscriptions': return ExpenseCategoryEnum.subscriptions;
+        case r'education': return ExpenseCategoryEnum.education;
         case r'other': return ExpenseCategoryEnum.other;
         default:
           if (!allowNull) {
