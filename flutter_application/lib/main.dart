@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:openapi/api.dart';
 
 import 'providers/expense_provider.dart';
+import 'screens/analytics_screen.dart';
 
 void main() {
   // Erzeugt ein Objekt vom Typ ApiClient mit der URL des lokalen Servers
@@ -46,6 +47,15 @@ class DashboardScreen extends StatelessWidget {
       appBar: AppBar(
         title: const Text('Smart Spend'),
         actions: [
+          IconButton(
+            tooltip: 'Analytics',
+            icon: const Icon(Icons.insights),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => const AnalyticsScreen(),
+              ),
+            ),
+          ),
           IconButton(
             tooltip: 'Refresh',
             icon: const Icon(Icons.refresh),
