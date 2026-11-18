@@ -50,3 +50,61 @@ Um eine rechtzeitige Fertigstellung zu garantieren und ein Verzetteln zu vermeid
 - **KI-Integration:** OpenAI API (`gpt-6-luna`)
 - **Datenbank:** SQLite oder PostgreSQL
 - **Deployment:** Docker
+
+## **5. Lokale Ausführung**
+
+Die App besteht aus **zwei Prozessen**, die gleichzeitig laufen müssen — jeder in
+einem eigenen Terminal. Das Backend muss **zuerst** gestartet werden, da der
+Client beim Start sofort `GET /expenses` aufruft.
+
+> **Hinweis:** Falls `dart` / `flutter` nicht im `PATH` liegen, den Terminals den
+> Flutter-SDK-Pfad voranstellen:
+> - `flutter`: `dependencies/flutter/bin`
+> - `dart`:    `dependencies/flutter/bin/cache/dart-sdk/bin`
+
+### Terminal 1 — Backend (Dart Server)
+
+```bash
+cd server_app
+dart run bin/server.dart
+```
+
+Warten auf: `Server running on http://0.0.0.0:8082`. Terminal offen lassen.
+
+### Terminal 2 — Frontend (Flutter Web)
+
+```bash
+cd flutter_application
+flutter run -d chrome
+```
+
+Der Client erwartet das Backend unter `http://localhost:8082` (siehe
+`flutter_application/lib/main.dart`).
+
+### Schnelltest (optional)
+
+Sobald der Server läuft, in einem weiteren Terminal:
+
+```bash
+curl http://localhost:8082/expenses
+```
+
+Gibt `[]` oder ein JSON-Array zurück — bestätigt, dass das Backend erreichbar ist.
+
+### Fehlerbehebung
+
+- **`:8082/expenses … net::ERR_CONNECTION_REFUSED`** im Browser: Das Backend
+  läuft nicht. Erst den Server starten, dann im Client auf *Refresh* klicken.
+- **Port 8082 belegt** (von einem alten Lauf): `lsof -ti:8082 | xargs kill`.
+
+## **6. Tests & Statische Analyse**
+
+```bash
+# Server (von server_app/)
+dart test
+dart analyze
+
+# Client (von flutter_application/)
+flutter test
+flutter analyze
+```
