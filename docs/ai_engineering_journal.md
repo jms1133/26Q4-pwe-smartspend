@@ -212,3 +212,51 @@ passing via `dart test`. Keeping the AI feeding *into* the existing create flow
 (rather than beside it) meant Phase 4 added almost no new persistence risk.
 
 ---
+
+## Entry 6 — Analytics: Computed Views Over Cached Data (Frontend)
+
+**Context**
+With CRUD and AI in place, the app lacked the thing that makes an expense
+manager actually useful: insight. The goal was a dashboard answering "where did
+my money go?", "how much this month?", and "am I spending more or saving?" via
+charts and a month-over-month comparison.
+
+**Interaction**
+The key architectural decision was recognizing this needed **zero backend
+work**. The `ExpenseProvider` already caches the full `List<Expense>` — each with
+`amount`, `category`, and `timestamp` — so analytics are *derived views* over
+data already in memory, not a new data source. No `api.yaml`, server, or
+`/openapi` changes; a new endpoint would have been redundant I/O.
+
+Three sub-problems:
+
+1. **Pure, injectable analytics.** All aggregation lives as getters/methods on
+   the provider (`spendByCategory`, `spendByMonth`, `monthOverMonthChange`,
+   etc.). Each time-based method takes an optional `now` parameter
+   (`currentMonthTotal({DateTime? now})`). This is the single most important
+   testability choice — without it, month math depends on the wall clock and
+   tests become flaky. With it, tests anchor `now` to a fixed `DateTime(2026, 3,
+   15)` and assert exact buckets.
+
+2. **Representing "undefined" honestly.** `monthOverMonthChange` returns
+   `double?` and yields `null` when last month had zero spend — growth from zero
+   is mathematically undefined. Returning `0` or `∞` would have lied to the user;
+   `null` lets the UI show a neutral "nothing to compare" state instead of a
+   misleading "+∞%".
+
+3. **Charts as a thin presentation layer.** Added `fl_chart` (pie for category
+   share, bar for the 6-month trend). `spendByMonth` deliberately emits
+   *continuous* zero-filled buckets so the bar chart has a gapless x-axis even in
+   months with no spending — a data-shape decision made in the provider, not
+   patched in the widget.
+
+**Reflection**
+The transferable lesson mirrors a database *view*: analytics are a projection of
+existing rows, so they belong next to the data (the provider), computed on
+demand, not persisted or re-fetched. Pushing the `now` seam into the API made 11
+unit tests trivial and deterministic with a `FakeDefaultApi` — no clock mocking,
+no server. Verified via `flutter analyze` (clean) and `flutter test` (18/18,
+including the 12 new analytics cases). Because it is a pure read-side feature, it
+added no persistence or validation risk to the existing CRUD/AI paths.
+
+---
