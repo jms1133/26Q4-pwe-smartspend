@@ -391,3 +391,69 @@ polluting the data with blank strings. Verified: backend `dart analyze` clean,
 clean, `flutter test` **18/18**.
 
 ---
+
+## Entry 9 — The "KI-Kommentar": Personality as a Product Feature
+
+**Context**
+The app so far was *correct* but joyless. The idea: have the AI add a short,
+funny one-sentence comment in the voice of a financial advisor — gently teasing
+a wasteful buy ("im Casino 200€ verzockt" → "Nein! Genau so hat mein Onkel
+Roberto sein Auto verloren.") and genuinely approving a sensible one ("12€
+Biogemüse" → "Gute Wahl! Bio ist etwas teurer, aber dein Körper wird es dir
+danken."). The goal was engagement, not new data: make the tool fun enough to
+actually open.
+
+**Interaction**
+Like Entry 8, the plumbing already existed — `description` was threaded through
+the spec, generated client, DB, both handlers, and the form field — so the
+change was again just the AI path, with **no OpenAPI regeneration**:
+
+1. **Reuse `description`, don't invent a `comment` field.** The AI comment lives
+   in the existing optional `description`. Zero schema churn; the field stays
+   general-purpose (a user can still type a plain note or clear the comment).
+   The UI relabels it "KI-Kommentar" and gives it two lines + a chat icon.
+
+2. **The prompt needs BOTH poles.** The first instinct — "add a funny comment"
+   — risks a model that roasts *everything*, including a sensible grocery run.
+   The fix was to give explicit **positive and negative examples** (tequila /
+   casino as playful jabs; Biogemüse / Notgroschen as sincere approval) plus a
+   "never insulting" guardrail and a "same language as the user" rule so German
+   input gets a German quip.
+
+3. **Defensive parse + log, reused verbatim.** `parseExpenseJson` normalizes
+   `description` (trim, empty/missing → null) exactly like `subcategory`; the
+   research log gained `parsed_description`.
+
+**Reflection**
+The main lesson is that **a prompt rule is a distribution, not a switch**: asking
+only for "funny" skews the model toward one tone. Pairing the instruction with
+balanced few-shot examples (reward *and* tease) is what makes the personality
+feel fair rather than mean — the same "show, don't just tell" insight as the
+`other`-seed signal in Entry 7, applied to tone instead of taxonomy. The second
+lesson is a product one: **reusing `description` turned a "fun idea" into a
+~15-line change** because earlier phases over-provisioned the schema. Tone is a
+real feature, but it stayed cheap because the data plumbing was already paid for.
+Verified: backend `dart analyze` clean, `dart test` **24/24** (+2 description
+cases); frontend `flutter analyze` clean, `flutter test` **18/18**. One caveat
+to revisit: the comment is generated at classify time and the user can edit it,
+so it is *not* regenerated if they later change the amount/category — acceptable
+for a fun field, but noted.
+
+**Addendum (tone follow-up).** A first live test confirmed the "distribution"
+lesson more sharply than expected: the *instruction* already said to praise and
+tease equally, yet the output was genuinely funny only for wasteful purchases
+and merely *pleasant* for good ones ("40€ running shoes" → "A solid investment
+in your stride"). The cause was the **examples**, not the rule: the two negative
+few-shots were punchy mini-stories while the two positive ones were warm-but-
+tame, so the model matched the comedic energy of each *example*, not the verbal
+instruction. The fix was to rewrite the positive examples to be just as funny
+("Dein Darm schreibt dir gerade eine Dankeskarte.", "Future-You just booked a
+vacation on the beach of your foresight.") and add an explicit "approval should
+be just as funny as the teasing, never a flat compliment" clause. Refined
+lesson: with few-shot prompting the **examples dominate the instruction** — to
+shift tone you must change what you *show*, not just what you *say*. Prompt-only
+change; tests stayed 24/24. (Side note: the test harness spawns a real server on
+fixed port 8082 and can leave a process behind if a run is interrupted, which
+surfaced here as spurious `server_test` failures until 8082 was freed.)
+
+---

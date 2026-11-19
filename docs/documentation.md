@@ -84,14 +84,17 @@ Freitext-String, der serverseitig gegen die `categories`-Tabelle find-or-create
 (case-insensitive) aufgeloest wird. `subcategory` ist ein optionaler
 Freitext-Zusatz: eine feinere Gruppierung unterhalb der stabilen Oberkategorie
 (z. B. Casino -> `entertainment`/`gambling`), die die KI beim Klassifizieren
-optional mitliefert (siehe Journal 8).
+optional mitliefert (siehe Journal 8). `description` beherbergt den optionalen
+**KI-Kommentar**: ein kurzer, lustiger Einzeiler aus Sicht eines
+Finanzberaters (siehe Journal 9) - frei editierbar, Feld bleibt
+general-purpose.
 
 **Forschungs-Log (nur Dokumentation):** `docs/classification_log.jsonl` haelt
 pro `/classify`-Aufruf eine JSON-Zeile fest (Eingabe, bekannte Kategorien, rohe
-Modellantwort, geparstes Ergebnis inkl. `parsed_subcategory`,
-`was_new_category`). Es ist **kein** Nutzer-Feature und wird **nicht** in der
-App-DB gespeichert; es dient allein der Analyse des Modellverhaltens fuer diese
-Ausarbeitung (vgl. Journal 7, 8).
+Modellantwort, geparstes Ergebnis inkl. `parsed_subcategory` und
+`parsed_description`, `was_new_category`). Es ist **kein** Nutzer-Feature und
+wird **nicht** in der App-DB gespeichert; es dient allein der Analyse des
+Modellverhaltens fuer diese Ausarbeitung (vgl. Journal 7, 8, 9).
 
 ### 3.4 API-Endpunkte
 
@@ -135,6 +138,11 @@ Ausarbeitung (vgl. Journal 7, 8).
   (leer/fehlend -> `null`), Anzeige/Bearbeitung im vorhandenen Formularfeld.
   Datenmodell war bereits vorbereitet (keine Client-Neugenerierung noetig).
   22 Backend-Tests. Journal 8.
+- **KI-Kommentar:** Der `/classify`-Prompt liefert zudem einen optionalen,
+  lustigen Einzeiler aus Sicht eines Finanzberaters (tadelnd bei Verschwendung,
+  anerkennend bei sinnvollen Kaeufen) im vorhandenen `description`-Feld. Prompt
+  enthaelt positive UND negative Beispiele plus Sprach-/"nie beleidigend"-Regel.
+  Feld in "KI-Kommentar" umbenannt, frei editierbar. 24 Backend-Tests. Journal 9.
 
 ## 5. Entwurfsentscheidungen (Auswahl)
 
@@ -166,9 +174,9 @@ Kurzfassung:
 
 ## 6. Qualit�tssicherung
 
-- **Automatische Tests:** Backend `dart test` (22, inkl. Server-CRUD, AI-Parsing
-  mit Unterkategorien und Kategorien-Handler); Frontend `flutter test` (6
-  Provider + 12 Analytics = 18). Alle gr�n.
+- **Automatische Tests:** Backend `dart test` (24, inkl. Server-CRUD, AI-Parsing
+  mit Unterkategorien und KI-Kommentar sowie Kategorien-Handler); Frontend
+  `flutter test` (6 Provider + 12 Analytics = 18). Alle gr�n.
 - **Statische Analyse:** `dart analyze` und `flutter analyze` ohne Befunde.
 - **Teststrategie:** Provider-Tests laufen gegen einen `FakeDefaultApi`
   (kein Server/DB n�tig); zeitbasierte Analytics-Methoden erhalten ein

@@ -380,6 +380,7 @@ class _ExpenseFormScreenState extends State<ExpenseFormScreen> {
         _titleController.text = parsed.title;
         _amountController.text = parsed.amount.toString();
         _subcategoryController.text = parsed.subcategory ?? '';
+        _descriptionController.text = parsed.description ?? '';
         _category = parsed.category;
         _categoryIsNew = !known
             .any((name) => name.toLowerCase() == parsed.category.toLowerCase());
@@ -515,9 +516,12 @@ class _ExpenseFormScreenState extends State<ExpenseFormScreen> {
               TextFormField(
                 controller: _descriptionController,
                 decoration: const InputDecoration(
-                  labelText: 'Description (optional)',
+                  labelText: 'KI-Kommentar (optional)',
+                  helperText: 'Vom KI-Finanzberater — frei editierbar',
+                  prefixIcon: Icon(Icons.chat_bubble_outline),
                   border: OutlineInputBorder(),
                 ),
+                maxLines: 2,
               ),
               const SizedBox(height: 16),
               TextFormField(

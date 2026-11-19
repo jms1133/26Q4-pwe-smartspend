@@ -57,6 +57,30 @@ Hope that helps!
       expect(input.subcategory, isNull);
     });
 
+    test('parses the fun description (KI-Kommentar)', () {
+      final input = AiService.parseExpenseJson(
+        '{"title": "Tequila", "category": "entertainment", "amount": 50, '
+        '"description": "I hope those 50€ get split across all your friends!"}',
+      );
+      expect(
+        input.description,
+        'I hope those 50€ get split across all your friends!',
+      );
+    });
+
+    test('normalizes an empty/missing description to null', () {
+      final absent = AiService.parseExpenseJson(
+        '{"title": "Cinema", "category": "entertainment", "amount": 15}',
+      );
+      expect(absent.description, isNull);
+
+      final blank = AiService.parseExpenseJson(
+        '{"title": "Cinema", "category": "entertainment", '
+        '"amount": 15, "description": "   "}',
+      );
+      expect(blank.description, isNull);
+    });
+
     test('falls back to "other" when category is missing', () {
       final input = AiService.parseExpenseJson(
         '{"title": "Mystery", "amount": 7}',
