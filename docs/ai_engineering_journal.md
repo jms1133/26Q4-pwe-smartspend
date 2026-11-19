@@ -260,3 +260,74 @@ including the 12 new analytics cases). Because it is a pure read-side feature, i
 added no persistence or validation risk to the existing CRUD/AI paths.
 
 ---
+
+## Entry 7 — Dynamic Categories: From Enum to Data (and Taming the AI)
+
+**Context**
+Until now `category` was a fixed enum baked into `api.yaml`. That hard-codes the
+product's vocabulary: the AI could never suggest a category we hadn't foreseen,
+and adding one meant editing the spec and regenerating the client. The goal was
+to make categories *data* — a runtime table the AI or user can extend — without
+letting the category list sprawl into a mess of near-synonyms
+("food"/"groceries"/"essen").
+
+**Interaction**
+Four distinct sub-problems were worked through:
+
+1. **Enum → table migration.** `category` became a plain `string` in the spec;
+   a `categories` table (`name COLLATE NOCASE UNIQUE`) now holds the vocabulary,
+   seeded on first run. On create/update the server does a **find-or-create**
+   (case-insensitive) and stores the canonical name. This directly undid the
+   dual-enum bridge from Entry 3 — the generated `ExpenseInputCategoryEnum`/
+   `ExpenseCategoryEnum` classes vanished, and all Flutter call sites that
+   bridged on `.value` were replaced with plain `String` logic. One subtle
+   Flutter trap: the generated `Category` model collides with Flutter's own
+   `foundation.Category`, so the provider imports `foundation` with
+   `hide Category`.
+
+2. **Synonym-sprawl mitigation = A + C.** Rather than a heavyweight
+   embedding-similarity dedup (descoped), we combined two cheap mechanisms:
+   **(A)** the classify prompt is given the current category list and told to
+   prefer an existing one; **(C)** new categories only materialize when the user
+   *saves* (confirm-on-save via find-or-create). Dedup itself is just trim +
+   `COLLATE NOCASE`.
+
+3. **Instrumenting the AI to see what it actually does.** Before trusting the
+   prompt, we added a research-only classification log
+   (`docs/classification_log.jsonl`, one JSON line per `/classify` call: input,
+   known categories, *raw* model response, parsed result, `was_new_category`).
+   This is not a user feature and is never persisted to the app DB — it exists
+   purely to study model behaviour for the Ausarbeitung. It was wired via an
+   optional `onRaw` callback on `classifyExpense`, so the logging seam does not
+   change the method's return type or the existing tests.
+
+4. **The "other" escape hatch.** The log immediately exposed a problem: with
+   `other` in the seed list, the model took the lazy path — "500€ an meine
+   Schwester geliehen" → `other`, "200€ an die Kirche gespendet" → `other`
+   (3 of 4 test inputs). `other` groups unrelated things and defeats the point
+   of dynamic categories. The fix was twofold: **remove `other` from the seed
+   list**, and **reword the prompt** to "invent a specific new category when
+   none fits" while explicitly forbidding catch-alls (`other`/`misc`/
+   `sonstiges`). `other` survives only as a last-resort *code* fallback for a
+   genuinely empty model response — never seeded, never shown to the model.
+
+**Reflection**
+The standout lesson is **instrument before you tune**. The classification log
+turned a vague feeling ("it picks `other` too much") into hard before/after
+evidence: post-change, the same four inputs produced `loan`, `donation`,
+`gambling`, `investment` — all `was_new_category: true`. Logging the *raw*
+response (not just the parsed result) was what made the model's reasoning
+visible. A second lesson: a seed value is also a *signal* to the model — simply
+offering `other` as a legal option was enough to make it the default; removing
+the option changed behaviour more than any amount of prompt wording alone would
+have. The enum→data move also shows that "more flexible" and "more disciplined"
+aren't opposites: freeing the vocabulary (data) while constraining *how* it
+grows (prompt A + confirm-on-save C) is what keeps it usable. Verified with
+`dart analyze`/`flutter analyze` clean, backend `dart test` 19/19 (the old
+enum-fallback test became a free-text/"missing → other" test) and frontend
+`flutter test` 18/18. An open follow-up the log also surfaced: coarse but
+*correct* groupings (Casino → `entertainment`) would be better expressed as
+category + subcategory (`entertainment`/`gambling`) — deferred to an AI-driven
+subcategory feature.
+
+---

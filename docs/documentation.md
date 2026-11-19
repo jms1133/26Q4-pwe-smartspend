@@ -74,13 +74,20 @@ Tabelle `expenses` (SQLite): `id` (PK, autoincrement), `title`, `category`,
 `timestamp` (TEXT, ISO-8601).
 
 Tabelle `categories` (SQLite): `id` (PK), `name` (`COLLATE NOCASE UNIQUE`).
-Beim ersten Start mit den urspruenglichen 10 Kategorien befuellt (Seeding).
+Beim ersten Start mit 9 Basiskategorien befuellt (Seeding). `other` ist
+bewusst **nicht** Teil des Seeds (siehe Abschnitt 5, Entwurfsentscheidung 6).
 
 Im API-Vertrag: `ExpenseInput` (vom Client gesendet) und `Expense` (`allOf`
 ExpenseInput + server-vergebene `id`/`timestamp`). `category` war urspruenglich
-ein Enum im `api.yaml`; seit dem Feature "Dynamische Kategorien" (IN ARBEIT) ist
-es ein Freitext-String, der serverseitig gegen die `categories`-Tabelle
-find-or-create aufgeloest wird.
+ein Enum im `api.yaml`; seit dem Feature "Dynamische Kategorien" ist es ein
+Freitext-String, der serverseitig gegen die `categories`-Tabelle find-or-create
+(case-insensitive) aufgeloest wird.
+
+**Forschungs-Log (nur Dokumentation):** `docs/classification_log.jsonl` haelt
+pro `/classify`-Aufruf eine JSON-Zeile fest (Eingabe, bekannte Kategorien, rohe
+Modellantwort, geparstes Ergebnis, `was_new_category`). Es ist **kein**
+Nutzer-Feature und wird **nicht** in der App-DB gespeichert; es dient allein der
+Analyse des Modellverhaltens fuer diese Ausarbeitung (vgl. Journal 7).
 
 ### 3.4 API-Endpunkte
 
@@ -110,8 +117,14 @@ find-or-create aufgeloest wird.
   Pr�zedenz, defensives JSON-Parsing), `/classify`-Endpunkt, "Parse with
   AI"-Feld im Formular. 7 AI-Tests. � Journal 5.
 - **Analytics-Dashboard:** clientseitig abgeleitete Auswertungen
-  (Kategorie-Anteil, Monatstrend, Monatsvergleich) �ber `fl_chart`.
-  12 Analytics-Tests. � Journal 6.
+  (Kategorie-Anteil, Monatstrend, Monatsvergleich) via `fl_chart`.
+  12 Analytics-Tests. Journal 6.
+- **Dynamische Kategorien:** `category` vom Enum zu einer `categories`-Tabelle
+  migriert; `/categories`-Endpunkte, find-or-create beim Speichern, dynamisches
+  Dropdown (bestehende Liste + KI-Vorschlag "(new)" + Freitext). Prompt
+  bevorzugt bestehende Kategorien bzw. erfindet eine spezifische neue und
+  vermeidet Sammelkategorien wie `other`. Forschungs-Log fuer die KI-Analyse.
+  19 Backend-Tests. Journal 7.
 
 ## 5. Entwurfsentscheidungen (Auswahl)
 
@@ -132,11 +145,20 @@ Kurzfassung:
    `other`). (Journal 5)
 5. **Analytics als "Views":** Auswertungen sind Projektionen �ber die bereits im
    Provider gecachten Daten  kein zus�tzlicher Backend-Endpunkt. (Journal 6)
+6. **Kategorien als Daten, aber diszipliniert:** `category` wurde vom festen
+   Enum zu einer DB-Tabelle (find-or-create, `COLLATE NOCASE`). Gegen
+   Synonym-Wildwuchs wirkt A+C: der KI-Prompt bevorzugt bestehende Kategorien
+   (A), neue entstehen erst beim Speichern (C). `other` ist bewusst nicht mehr
+   geseedet und wird dem Modell nicht angeboten - es ueberlebt nur als
+   Not-Fallback fuer eine leere Modellantwort. Begruendung: ein Seed-Wert ist
+   fuer das Modell auch ein Signal; `other` als bequemer Sammeltopf verhindert
+   spezifische Kategorien. (Journal 7)
 
 ## 6. Qualit�tssicherung
 
-- **Automatische Tests:** Backend `dart test` (11 Server + 7 AI = 18);
-  Frontend `flutter test` (6 Provider + 12 Analytics = 18). Alle gr�n.
+- **Automatische Tests:** Backend `dart test` (19, inkl. Server-CRUD, AI-Parsing
+  und Kategorien-Handler); Frontend `flutter test` (6 Provider + 12 Analytics =
+  18). Alle gr�n.
 - **Statische Analyse:** `dart analyze` und `flutter analyze` ohne Befunde.
 - **Teststrategie:** Provider-Tests laufen gegen einen `FakeDefaultApi`
   (kein Server/DB n�tig); zeitbasierte Analytics-Methoden erhalten ein
@@ -161,14 +183,14 @@ cd flutter_application && flutter run -d chrome
 
 Geplante bzw. diskutierte Erweiterungen (nach Aufwand/Abh�ngigkeit geordnet):
 
-1. **Dynamische Kategorien (IN ARBEIT, Branch `feature/dynamic-categories`):**
-   Erkennt die KI eine noch nicht existierende Kategorie, wird diese beim
-   Speichern angelegt und in die Kategorienliste aufgenommen. `category` wurde
-   vom Enum zu einer DB-Tabelle (`/categories`) geloest. Gegen Synonym-Wildwuchs
-   wirkt A+C: der KI-Prompt bevorzugt bestehende Kategorien (A), neue entstehen
-   erst bei Nutzer-Bestaetigung durch Speichern (C, find-or-create). Dedup ist
-   trim + case-insensitive (`COLLATE NOCASE`). Status: Backend fertig, Flutter +
-   Tests + Client-Regenerierung offen. Reflexion folgt in Journal-Eintrag 7.
+1. **KI-Unterkategorien (NAECHSTER SCHRITT):** Dynamische Kategorien sind
+   abgeschlossen (siehe Abschnitt 4/5, Journal 7). Beobachtung aus dem
+   Forschungs-Log: manche Ausgaben passen in eine bestehende Oberkategorie, aber
+   verdienen eine feinere Einordnung (z. B. Casino -> `entertainment` mit
+   Unterkategorie `gambling`). Idee: die KI liefert zusaetzlich eine optionale
+   `subcategory`; die Oberkategorie bleibt stabil (gute Dashboard-Aggregation),
+   die Unterkategorie gibt Freiheit beim Gruppieren. Das Freitext-Feld
+   `subcategory` existiert im Datenmodell bereits.
 2. **Login-System:** Benutzer-Tabelle, Passwort-Hashing, Auth-Endpunkte,
    Token/Session, Auth-Middleware, `user_id`-Fremdschl�ssel auf `expenses`.
    Voraussetzung f�r korrekte Mehrbenutzer-Synchronisierung.
