@@ -33,6 +33,30 @@ Hope that helps!
       expect(input.category, 'banana');
     });
 
+    test('parses an optional subcategory', () {
+      final input = AiService.parseExpenseJson(
+        '{"title": "Casino night", "category": "entertainment", '
+        '"amount": 50, "subcategory": "gambling"}',
+      );
+      expect(input.category, 'entertainment');
+      expect(input.subcategory, 'gambling');
+    });
+
+    test('leaves subcategory null when absent', () {
+      final input = AiService.parseExpenseJson(
+        '{"title": "Cinema", "category": "entertainment", "amount": 15}',
+      );
+      expect(input.subcategory, isNull);
+    });
+
+    test('normalizes an empty/whitespace subcategory to null', () {
+      final input = AiService.parseExpenseJson(
+        '{"title": "Cinema", "category": "entertainment", '
+        '"amount": 15, "subcategory": "   "}',
+      );
+      expect(input.subcategory, isNull);
+    });
+
     test('falls back to "other" when category is missing', () {
       final input = AiService.parseExpenseJson(
         '{"title": "Mystery", "amount": 7}',

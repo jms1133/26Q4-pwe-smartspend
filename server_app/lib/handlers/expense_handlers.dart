@@ -230,6 +230,7 @@ void _logClassification({
       'raw_response': rawResponse,
       'parsed_title': input.title,
       'parsed_category': input.category,
+      'parsed_subcategory': input.subcategory,
       'parsed_amount': input.amount,
       'was_new_category': wasNew,
     };
