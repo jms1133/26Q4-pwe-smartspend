@@ -379,6 +379,7 @@ class _ExpenseFormScreenState extends State<ExpenseFormScreen> {
       setState(() {
         _titleController.text = parsed.title;
         _amountController.text = parsed.amount.toString();
+        _subcategoryController.text = parsed.subcategory ?? '';
         _category = parsed.category;
         _categoryIsNew = !known
             .any((name) => name.toLowerCase() == parsed.category.toLowerCase());

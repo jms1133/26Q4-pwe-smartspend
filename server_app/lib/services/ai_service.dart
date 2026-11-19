@@ -156,7 +156,7 @@ class AiService {
     return '''
 You are an expense parser. Extract a single expense from the user's text and
 respond with ONLY a JSON object (no markdown, no prose) of the form:
-{"title": string, "category": string, "amount": number}
+{"title": string, "category": string, "amount": number, "subcategory": string|null}
 
 Rules:
 - Existing categories are: $categories
@@ -168,6 +168,11 @@ Rules:
   near-duplicates of existing categories.
 - NEVER use a generic catch-all category such as "other", "misc",
   "miscellaneous" or "sonstiges". Always choose a meaningful, specific name.
+- "subcategory" is an OPTIONAL finer tag UNDER the top-level category, for a
+  more specific grouping while keeping the category stable (e.g. a casino visit
+  -> category "entertainment", subcategory "gambling"; dog food -> category
+  "food", subcategory "pet"). Keep it short and lowercase. Use null (or omit it)
+  when there is no meaningful finer grouping.
 - "amount" is a positive number in euros (no currency symbol).
 - "title" is a short human-readable label for the expense.
 
@@ -181,7 +186,8 @@ User text: "$text"
   /// it). The prompt forbids generic catch-alls and tells the model to invent
   /// a specific category when nothing fits; `other` survives here only as a
   /// last-resort fallback for a genuinely empty/missing category, and is no
-  /// longer seeded or offered to the model.
+  /// longer seeded or offered to the model. `subcategory` is optional: it is
+  /// trimmed and normalized to null when empty or missing.
   static ExpenseInput parseExpenseJson(String raw) {
     final jsonSlice = _extractJsonObject(raw);
     if (jsonSlice == null) {
@@ -215,10 +221,18 @@ User text: "$text"
     final category =
         (rawCategory == null || rawCategory.isEmpty) ? 'other' : rawCategory;
 
+    // Subcategory is optional: trim it and normalize empty/missing to null so
+    // the field only carries a real finer tag. The model is told to omit it or
+    // send null when there is no meaningful grouping.
+    final rawSubcategory = (map['subcategory'] as String?)?.trim();
+    final subcategory =
+        (rawSubcategory == null || rawSubcategory.isEmpty) ? null : rawSubcategory;
+
     return ExpenseInput(
       title: title,
       category: category,
       amount: amount,
+      subcategory: subcategory,
     );
   }
 

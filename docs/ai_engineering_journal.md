@@ -331,3 +331,63 @@ category + subcategory (`entertainment`/`gambling`) — deferred to an AI-driven
 subcategory feature.
 
 ---
+
+## Entry 8 — AI-Driven Subcategories: Finer Grouping Without Sprawl
+
+**Context**
+Entry 7's classification log surfaced a recurring pattern: some expenses fit a
+stable *top-level* category but deserve a finer grouping. A casino visit is
+genuinely `entertainment`, but lumping it with cinema tickets loses information;
+splitting it into its own top-level `gambling` category would fragment the
+dashboard aggregation that Analytics (Entry 6) depends on. The answer is a
+second axis: keep the top-level category stable for clean aggregation, and add
+an optional `subcategory` for the finer tag (`entertainment` / `gambling`).
+
+**Interaction**
+The surprise here was how *little* code the feature needed — most of the
+plumbing already existed:
+
+1. **The data layer was already done.** `subcategory` was present in `api.yaml`
+   (ExpenseInput), the generated client (`toJson`/`fromJson`), the SQLite
+   `expenses.subcategory` column, both expense handlers, and even the form's
+   Subcategory text field and the dashboard list subtitle. The schema had been
+   provisioned ahead of the feature. So **no OpenAPI regeneration was needed** —
+   a reminder to check what the generated model already carries before touching
+   `api.yaml`.
+
+2. **The gap was purely the AI path.** Three precise edits closed it:
+   - the `/classify` prompt now asks for `"subcategory": string|null`, described
+     as an *optional finer tag under a stable top-level category* (casino →
+     `entertainment`/`gambling`, dog food → `food`/`pet`), with an explicit
+     instruction to send `null`/omit when there is no meaningful grouping;
+   - `parseExpenseJson` reads it defensively — trimmed, empty/missing normalized
+     to `null` — mirroring the existing title/category discipline;
+   - the form's `_classify` populates the already-present Subcategory field from
+     `parsed.subcategory ?? ''` so the suggestion surfaces for review.
+
+3. **Extended the research log, not the app.** `_logClassification` gained a
+   `parsed_subcategory` field so the Ausarbeitung can show subcategory behaviour
+   alongside category behaviour — consistent with the Entry 7 log, still
+   research-only and non-fatal.
+
+4. **Free text, deliberately.** Subcategory is *not* a second find-or-create
+   table. Starting with free text keeps the feature small; the open question of
+   whether subcategories need their own managed vocabulary is explicitly
+   deferred until the data shows it's needed.
+
+**Reflection**
+Two lessons. First, **provisioning the schema ahead of the feature pays off**:
+because `subcategory` was already threaded through the spec, client, DB, and UI,
+the feature collapsed to a prompt change, a few parse lines, and one controller
+assignment. The state file had scoped this as a larger task; reading the code
+first (not the plan) revealed the real, much smaller delta. Second, the
+**category-stable / subcategory-free split is the same "flexible yet disciplined"
+principle from Entry 7 applied to a new axis**: the top-level category stays
+aggregation-friendly and sprawl-controlled (prompt A + confirm-on-save C), while
+the subcategory gives unconstrained grouping freedom where it can't hurt the
+dashboards. Defensive parsing (empty → `null`) keeps the optional field from
+polluting the data with blank strings. Verified: backend `dart analyze` clean,
+`dart test` **22/22** (+3 subcategory parse cases); frontend `flutter analyze`
+clean, `flutter test` **18/18**.
+
+---
