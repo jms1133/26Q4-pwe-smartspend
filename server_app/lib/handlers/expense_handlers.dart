@@ -231,6 +231,7 @@ void _logClassification({
       'parsed_title': input.title,
       'parsed_category': input.category,
       'parsed_subcategory': input.subcategory,
+      'parsed_description': input.description,
       'parsed_amount': input.amount,
       'was_new_category': wasNew,
     };

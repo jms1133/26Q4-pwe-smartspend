@@ -156,7 +156,7 @@ class AiService {
     return '''
 You are an expense parser. Extract a single expense from the user's text and
 respond with ONLY a JSON object (no markdown, no prose) of the form:
-{"title": string, "category": string, "amount": number, "subcategory": string|null}
+{"title": string, "category": string, "amount": number, "subcategory": string|null, "description": string}
 
 Rules:
 - Existing categories are: $categories
@@ -175,6 +175,23 @@ Rules:
   when there is no meaningful finer grouping.
 - "amount" is a positive number in euros (no currency symbol).
 - "title" is a short human-readable label for the expense.
+- "description" is a SHORT, FUN one-sentence comment from the perspective of a
+  witty financial advisor. Be genuinely funny in BOTH directions: when the
+  purchase looks wasteful, tease it with a punchy mini-story or absurd image;
+  when it looks sensible or healthy, PRAISE it with the SAME comedic energy
+  (playful exaggeration or a cheeky twist) — approval should be just as funny as
+  the teasing, never a flat compliment. Never be insulting. Write it in the SAME
+  LANGUAGE as the user's text. Examples:
+    * "a tequila bottle for a party, 50€" ->
+      "I hope those 50€ get split across all your friends!"
+    * "im Casino 200€ verzockt" ->
+      "Nein! Genau so hat mein Onkel Roberto sein Auto verloren."
+    * "12€ Biogemüse bei Aldi" ->
+      "Dein Darm schreibt dir gerade eine Dankeskarte."
+    * "40€ in den Notgroschen gespart" ->
+      "Future-You just booked a vacation on the beach of your foresight."
+    * "90€ running shoes" ->
+      "Ninety euros to outrun your bad financial decisions? Worth every step."
 
 User text: "$text"
 ''';
@@ -186,8 +203,9 @@ User text: "$text"
   /// it). The prompt forbids generic catch-alls and tells the model to invent
   /// a specific category when nothing fits; `other` survives here only as a
   /// last-resort fallback for a genuinely empty/missing category, and is no
-  /// longer seeded or offered to the model. `subcategory` is optional: it is
-  /// trimmed and normalized to null when empty or missing.
+  /// longer seeded or offered to the model. `subcategory` and `description`
+  /// (the fun "KI-Kommentar") are optional: each is trimmed and normalized to
+  /// null when empty or missing.
   static ExpenseInput parseExpenseJson(String raw) {
     final jsonSlice = _extractJsonObject(raw);
     if (jsonSlice == null) {
@@ -228,11 +246,18 @@ User text: "$text"
     final subcategory =
         (rawSubcategory == null || rawSubcategory.isEmpty) ? null : rawSubcategory;
 
+    // Description carries the fun "KI-Kommentar" from the model. Optional:
+    // trimmed, empty/missing -> null. The user can edit or clear it on the form.
+    final rawDescription = (map['description'] as String?)?.trim();
+    final description =
+        (rawDescription == null || rawDescription.isEmpty) ? null : rawDescription;
+
     return ExpenseInput(
       title: title,
       category: category,
       amount: amount,
       subcategory: subcategory,
+      description: description,
     );
   }
 
