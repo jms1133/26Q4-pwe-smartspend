@@ -1,4 +1,3 @@
-import 'package:openapi/api.dart';
 import 'package:server_app/services/ai_service.dart';
 import 'package:test/test.dart';
 
@@ -9,7 +8,7 @@ void main() {
         '{"title": "Cinema", "category": "entertainment", "amount": 15}',
       );
       expect(input.title, 'Cinema');
-      expect(input.category, ExpenseInputCategoryEnum.entertainment);
+      expect(input.category, 'entertainment');
       expect(input.amount, 15.0);
     });
 
@@ -23,15 +22,22 @@ Hope that helps!
 ''';
       final input = AiService.parseExpenseJson(raw);
       expect(input.title, 'Groceries');
-      expect(input.category, ExpenseInputCategoryEnum.food);
+      expect(input.category, 'food');
       expect(input.amount, 42.5);
     });
 
-    test('falls back to "other" for an unknown category', () {
+    test('keeps a non-seed category as free text', () {
       final input = AiService.parseExpenseJson(
         '{"title": "Mystery", "category": "banana", "amount": 7}',
       );
-      expect(input.category, ExpenseInputCategoryEnum.other);
+      expect(input.category, 'banana');
+    });
+
+    test('falls back to "other" when category is missing', () {
+      final input = AiService.parseExpenseJson(
+        '{"title": "Mystery", "amount": 7}',
+      );
+      expect(input.category, 'other');
     });
 
     test('parses a string amount with a comma decimal separator', () {

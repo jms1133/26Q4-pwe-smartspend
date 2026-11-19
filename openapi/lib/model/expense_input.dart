@@ -22,7 +22,8 @@ class ExpenseInput {
 
   String title;
 
-  ExpenseInputCategoryEnum category;
+  /// The expense category as free text. No longer enum-constrained: categories are managed as data (see the /categories endpoints) so the AI (or user) can introduce new ones. On create/update the server find-or-creates the matching category (case-insensitive). 
+  String category;
 
   double amount;
 
@@ -101,7 +102,7 @@ class ExpenseInput {
 
       return ExpenseInput(
         title: mapValueOfType<String>(json, r'title')!,
-        category: ExpenseInputCategoryEnum.fromJson(json[r'category'])!,
+        category: mapValueOfType<String>(json, r'category')!,
         amount: mapValueOfType<double>(json, r'amount')!,
         description: mapValueOfType<String>(json, r'description'),
         subcategory: mapValueOfType<String>(json, r'subcategory'),
@@ -157,102 +158,4 @@ class ExpenseInput {
     'amount',
   };
 }
-
-
-class ExpenseInputCategoryEnum {
-  /// Instantiate a new enum with the provided [value].
-  const ExpenseInputCategoryEnum._(this.value);
-
-  /// The underlying value of this enum member.
-  final String value;
-
-  @override
-  String toString() => value;
-
-  String toJson() => value;
-
-  static const food = ExpenseInputCategoryEnum._(r'food');
-  static const transport = ExpenseInputCategoryEnum._(r'transport');
-  static const entertainment = ExpenseInputCategoryEnum._(r'entertainment');
-  static const housing = ExpenseInputCategoryEnum._(r'housing');
-  static const health = ExpenseInputCategoryEnum._(r'health');
-  static const insurance = ExpenseInputCategoryEnum._(r'insurance');
-  static const shopping = ExpenseInputCategoryEnum._(r'shopping');
-  static const subscriptions = ExpenseInputCategoryEnum._(r'subscriptions');
-  static const education = ExpenseInputCategoryEnum._(r'education');
-  static const other = ExpenseInputCategoryEnum._(r'other');
-
-  /// List of all possible values in this [enum][ExpenseInputCategoryEnum].
-  static const values = <ExpenseInputCategoryEnum>[
-    food,
-    transport,
-    entertainment,
-    housing,
-    health,
-    insurance,
-    shopping,
-    subscriptions,
-    education,
-    other,
-  ];
-
-  static ExpenseInputCategoryEnum? fromJson(dynamic value) => ExpenseInputCategoryEnumTypeTransformer().decode(value);
-
-  static List<ExpenseInputCategoryEnum> listFromJson(dynamic json, {bool growable = false,}) {
-    final result = <ExpenseInputCategoryEnum>[];
-    if (json is List && json.isNotEmpty) {
-      for (final row in json) {
-        final value = ExpenseInputCategoryEnum.fromJson(row);
-        if (value != null) {
-          result.add(value);
-        }
-      }
-    }
-    return result.toList(growable: growable);
-  }
-}
-
-/// Transformation class that can [encode] an instance of [ExpenseInputCategoryEnum] to String,
-/// and [decode] dynamic data back to [ExpenseInputCategoryEnum].
-class ExpenseInputCategoryEnumTypeTransformer {
-  factory ExpenseInputCategoryEnumTypeTransformer() => _instance ??= const ExpenseInputCategoryEnumTypeTransformer._();
-
-  const ExpenseInputCategoryEnumTypeTransformer._();
-
-  String encode(ExpenseInputCategoryEnum data) => data.value;
-
-  /// Decodes a [dynamic value][data] to a ExpenseInputCategoryEnum.
-  ///
-  /// If [allowNull] is true and the [dynamic value][data] cannot be decoded successfully,
-  /// then null is returned. However, if [allowNull] is false and the [dynamic value][data]
-  /// cannot be decoded successfully, then an [UnimplementedError] is thrown.
-  ///
-  /// The [allowNull] is very handy when an API changes and a new enum value is added or removed,
-  /// and users are still using an old app with the old code.
-  ExpenseInputCategoryEnum? decode(dynamic data, {bool allowNull = true}) {
-    if (data != null) {
-      switch (data) {
-        case r'food': return ExpenseInputCategoryEnum.food;
-        case r'transport': return ExpenseInputCategoryEnum.transport;
-        case r'entertainment': return ExpenseInputCategoryEnum.entertainment;
-        case r'housing': return ExpenseInputCategoryEnum.housing;
-        case r'health': return ExpenseInputCategoryEnum.health;
-        case r'insurance': return ExpenseInputCategoryEnum.insurance;
-        case r'shopping': return ExpenseInputCategoryEnum.shopping;
-        case r'subscriptions': return ExpenseInputCategoryEnum.subscriptions;
-        case r'education': return ExpenseInputCategoryEnum.education;
-        case r'other': return ExpenseInputCategoryEnum.other;
-        default:
-          if (!allowNull) {
-            throw ArgumentError('Unknown enum value to decode: $data');
-          }
-      }
-    }
-    return null;
-  }
-
-  /// Singleton [ExpenseInputCategoryEnumTypeTransformer] instance.
-  static ExpenseInputCategoryEnumTypeTransformer? _instance;
-}
-
 
