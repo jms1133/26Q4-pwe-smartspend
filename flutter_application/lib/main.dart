@@ -14,7 +14,9 @@ void main() {
       providers: [
         Provider<ApiClient>.value(value: apiClient),
         ChangeNotifierProvider<ExpenseProvider>(
-          create: (_) => ExpenseProvider(DefaultApi(apiClient))..loadExpenses(),
+          create: (_) => ExpenseProvider(DefaultApi(apiClient))
+            ..loadExpenses()
+            ..loadCategories(),
         ),
       ],
       child: const SmartSpendApp(),
@@ -150,8 +152,8 @@ class _ExpenseTile extends StatelessWidget {
       title: Text(expense.title),
       subtitle: Text(
         expense.subcategory == null || expense.subcategory!.isEmpty
-            ? expense.category.value
-            : '${expense.category.value} · ${expense.subcategory}',
+            ? expense.category
+            : '${expense.category} · ${expense.subcategory}',
       ),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
@@ -207,6 +209,103 @@ class _ErrorView extends StatelessWidget {
   }
 }
 
+class _CategoryDropdown extends StatelessWidget {
+  const _CategoryDropdown({
+    required this.value,
+    required this.isNew,
+    required this.onChanged,
+  });
+
+  final String value;
+  final bool isNew;
+  final void Function(String value, bool isNew) onChanged;
+
+  static const String _addNewSentinel = '__add_new__';
+
+  @override
+  Widget build(BuildContext context) {
+    final provider = context.watch<ExpenseProvider>();
+    final names = provider.categoryNames;
+
+    final options = <String>[...names];
+    if (isNew && !options.contains(value)) {
+      options.insert(0, value);
+    }
+    if (!options.contains(value)) {
+      options.add(value);
+    }
+
+    return DropdownButtonFormField<String>(
+      initialValue: value,
+      isExpanded: true,
+      decoration: const InputDecoration(
+        labelText: 'Category',
+        border: OutlineInputBorder(),
+      ),
+      items: [
+        for (final name in options)
+          DropdownMenuItem(
+            value: name,
+            child: Text(
+              (isNew && name == value) ? '$name (new)' : name,
+            ),
+          ),
+        const DropdownMenuItem(
+          value: _addNewSentinel,
+          child: Text('+ Add new category…'),
+        ),
+      ],
+      onChanged: (selected) async {
+        if (selected == null) return;
+        if (selected == _addNewSentinel) {
+          final created = await _promptNewCategory(context);
+          if (created != null && created.isNotEmpty) {
+            final known = provider.categoryNames;
+            final existed =
+                known.any((n) => n.toLowerCase() == created.toLowerCase());
+            onChanged(created, !existed);
+          }
+          return;
+        }
+        onChanged(selected, false);
+      },
+    );
+  }
+
+  Future<String?> _promptNewCategory(BuildContext context) {
+    final controller = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('New category'),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            decoration: const InputDecoration(
+              labelText: 'Category name',
+              border: OutlineInputBorder(),
+            ),
+            onSubmitted: (value) =>
+                Navigator.of(dialogContext).pop(value.trim()),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () =>
+                  Navigator.of(dialogContext).pop(controller.text.trim()),
+              child: const Text('Add'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
 class ExpenseFormScreen extends StatefulWidget {
   const ExpenseFormScreen({super.key, this.existing});
 
@@ -223,7 +322,8 @@ class _ExpenseFormScreenState extends State<ExpenseFormScreen> {
   late final TextEditingController _descriptionController;
   late final TextEditingController _subcategoryController;
   final _nlController = TextEditingController();
-  late ExpenseInputCategoryEnum _category;
+  String _category = 'other';
+  bool _categoryIsNew = false;
   bool _submitting = false;
   bool _classifying = false;
 
@@ -241,12 +341,7 @@ class _ExpenseFormScreenState extends State<ExpenseFormScreen> {
         TextEditingController(text: existing?.description ?? '');
     _subcategoryController =
         TextEditingController(text: existing?.subcategory ?? '');
-    _category = existing == null
-        ? ExpenseInputCategoryEnum.other
-        : ExpenseInputCategoryEnum.values.firstWhere(
-            (c) => c.value == existing.category.value,
-            orElse: () => ExpenseInputCategoryEnum.other,
-          );
+    _category = existing?.category ?? 'other';
   }
 
   @override
@@ -280,13 +375,13 @@ class _ExpenseFormScreenState extends State<ExpenseFormScreen> {
         );
         return;
       }
+      final known = context.read<ExpenseProvider>().categoryNames;
       setState(() {
         _titleController.text = parsed.title;
         _amountController.text = parsed.amount.toString();
-        _category = ExpenseInputCategoryEnum.values.firstWhere(
-          (c) => c.value == parsed.category.value,
-          orElse: () => ExpenseInputCategoryEnum.other,
-        );
+        _category = parsed.category;
+        _categoryIsNew = !known
+            .any((name) => name.toLowerCase() == parsed.category.toLowerCase());
       });
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Review the fields, then add.')),
@@ -405,21 +500,14 @@ class _ExpenseFormScreenState extends State<ExpenseFormScreen> {
                 },
               ),
               const SizedBox(height: 16),
-              DropdownButtonFormField<ExpenseInputCategoryEnum>(
-                initialValue: _category,
-                decoration: const InputDecoration(
-                  labelText: 'Category',
-                  border: OutlineInputBorder(),
-                ),
-                items: [
-                  for (final category in ExpenseInputCategoryEnum.values)
-                    DropdownMenuItem(
-                      value: category,
-                      child: Text(category.value),
-                    ),
-                ],
-                onChanged: (value) {
-                  if (value != null) setState(() => _category = value);
+              _CategoryDropdown(
+                value: _category,
+                isNew: _categoryIsNew,
+                onChanged: (value, isNew) {
+                  setState(() {
+                    _category = value;
+                    _categoryIsNew = isNew;
+                  });
                 },
               ),
               const SizedBox(height: 16),

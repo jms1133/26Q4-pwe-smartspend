@@ -11,8 +11,10 @@ Method | HTTP request | Description
 ------------- | ------------- | -------------
 [**chat**](DefaultApi.md#chat) | **POST** /chat | Send a message to ChatGPT
 [**classifyText**](DefaultApi.md#classifytext) | **POST** /classify | Classify raw expense text into a structured ExpenseInput
+[**createCategory**](DefaultApi.md#createcategory) | **POST** /categories | Create a category if it does not already exist (find-or-create)
 [**createExpense**](DefaultApi.md#createexpense) | **POST** /expenses | Create a new expense
 [**deleteExpense**](DefaultApi.md#deleteexpense) | **DELETE** /expenses/{id} | Delete an expense
+[**listCategories**](DefaultApi.md#listcategories) | **GET** /categories | List all known expense categories
 [**listExpenses**](DefaultApi.md#listexpenses) | **GET** /expenses | List all expenses
 [**updateExpense**](DefaultApi.md#updateexpense) | **PUT** /expenses/{id} | Update an existing expense
 
@@ -87,6 +89,47 @@ Name | Type | Description  | Notes
 ### Return type
 
 [**ExpenseInput**](ExpenseInput.md)
+
+### Authorization
+
+No authorization required
+
+### HTTP request headers
+
+ - **Content-Type**: application/json
+ - **Accept**: application/json
+
+[[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
+
+# **createCategory**
+> Category createCategory(categoryInput)
+
+Create a category if it does not already exist (find-or-create)
+
+### Example
+```dart
+import 'package:openapi/api.dart';
+
+final api_instance = DefaultApi();
+final categoryInput = CategoryInput(); // CategoryInput | 
+
+try {
+    final result = api_instance.createCategory(categoryInput);
+    print(result);
+} catch (e) {
+    print('Exception when calling DefaultApi->createCategory: $e\n');
+}
+```
+
+### Parameters
+
+Name | Type | Description  | Notes
+------------- | ------------- | ------------- | -------------
+ **categoryInput** | [**CategoryInput**](CategoryInput.md)|  | 
+
+### Return type
+
+[**Category**](Category.md)
 
 ### Authorization
 
@@ -177,6 +220,43 @@ No authorization required
 
  - **Content-Type**: Not defined
  - **Accept**: Not defined
+
+[[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
+
+# **listCategories**
+> List<Category> listCategories()
+
+List all known expense categories
+
+### Example
+```dart
+import 'package:openapi/api.dart';
+
+final api_instance = DefaultApi();
+
+try {
+    final result = api_instance.listCategories();
+    print(result);
+} catch (e) {
+    print('Exception when calling DefaultApi->listCategories: $e\n');
+}
+```
+
+### Parameters
+This endpoint does not need any parameter.
+
+### Return type
+
+[**List<Category>**](Category.md)
+
+### Authorization
+
+No authorization required
+
+### HTTP request headers
+
+ - **Content-Type**: Not defined
+ - **Accept**: application/json
 
 [[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
 

@@ -13,7 +13,7 @@ class FakeDefaultApi extends DefaultApi {
   Expense _toExpense(int id, ExpenseInput input) => Expense(
         id: id,
         title: input.title,
-        category: ExpenseCategoryEnum.fromJson(input.category.value)!,
+        category: input.category,
         amount: input.amount,
         description: input.description,
         subcategory: input.subcategory,
@@ -60,7 +60,7 @@ class FakeDefaultApi extends DefaultApi {
 ExpenseInput _input({String title = 'Coffee', double amount = 3.5}) =>
     ExpenseInput(
       title: title,
-      category: ExpenseInputCategoryEnum.food,
+      category: 'food',
       amount: amount,
     );
 

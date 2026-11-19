@@ -1,7 +1,9 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:shelf/shelf.dart';
 import 'package:sqlite3/sqlite3.dart';
 import 'package:openapi/api.dart';
+import 'package:server_app/handlers/category_handlers.dart';
 import 'package:server_app/services/ai_service.dart';
 
 /// Converts a single SQLite [Row] into the generated [Expense] model.
@@ -14,7 +16,7 @@ Expense _rowToExpense(Row row) {
   return Expense(
     id: row['id'] as int,
     title: row['title'] as String,
-    category: ExpenseCategoryEnum.fromJson(row['category'] as String)!,
+    category: row['category'] as String,
     subcategory: row['subcategory'] as String?,
     description: row['description'] as String?,
     amount: row['amount'] as double,
@@ -49,6 +51,12 @@ Future<Response> createExpenseHandler(Request request, Database db) async {
       return Response.badRequest(body: 'Invalid expense payload.');
     }
 
+    // Find-or-create the category so a new one (from the AI or the user)
+    // is registered. We store the canonical name from the categories table
+    // so casing stays consistent across expenses.
+    final category = findOrCreateCategory(db, input.category);
+    final categoryName = category['name'] as String;
+
     final timestamp = DateTime.now().toUtc().toIso8601String();
 
     db.execute(
@@ -58,7 +66,7 @@ Future<Response> createExpenseHandler(Request request, Database db) async {
       ''',
       [
         input.title,
-        input.category.value,
+        categoryName,
         input.subcategory,
         input.description,
         input.amount,
@@ -112,6 +120,9 @@ Future<Response> updateExpenseHandler(
       return Response.badRequest(body: 'Invalid expense payload.');
     }
 
+    final category = findOrCreateCategory(db, input.category);
+    final categoryName = category['name'] as String;
+
     db.execute(
       '''
       UPDATE expenses
@@ -120,7 +131,7 @@ Future<Response> updateExpenseHandler(
       ''',
       [
         input.title,
-        input.category.value,
+        categoryName,
         input.subcategory,
         input.description,
         input.amount,
@@ -144,7 +155,11 @@ Future<Response> updateExpenseHandler(
 /// Parses raw natural-language expense text into a structured [ExpenseInput]
 /// via the AI model. Returns the parsed input for the client to review before
 /// saving it through the normal `POST /expenses` flow.
-Future<Response> classifyHandler(Request request, AiService aiService) async {
+Future<Response> classifyHandler(
+  Request request,
+  AiService aiService,
+  Database db,
+) async {
   try {
     final payload = await request.readAsString();
     final json = jsonDecode(payload);
@@ -158,7 +173,25 @@ Future<Response> classifyHandler(Request request, AiService aiService) async {
       return Response.badRequest(body: 'Field "text" must not be empty.');
     }
 
-    final input = await aiService.classifyExpense(text);
+    // Pass the current categories so the AI prefers an existing one over a
+    // near-duplicate (synonym-sprawl mitigation).
+    final categoryRows = db.select('SELECT name FROM categories');
+    final knownCategories =
+        categoryRows.map((r) => r['name'] as String).toList();
+
+    String? rawResponse;
+    final input = await aiService.classifyExpense(
+      text,
+      knownCategories: knownCategories,
+      onRaw: (raw) => rawResponse = raw,
+    );
+
+    _logClassification(
+      text: text,
+      knownCategories: knownCategories,
+      rawResponse: rawResponse,
+      input: input,
+    );
 
     return Response.ok(
       jsonEncode(input.toJson()),
@@ -170,6 +203,42 @@ Future<Response> classifyHandler(Request request, AiService aiService) async {
   } catch (e) {
     print('Error in classifyHandler: $e');
     return Response.internalServerError(body: 'Failed to classify expense.');
+  }
+}
+
+/// Research-only classification log (NOT a user/app feature, NOT persisted to
+/// the database). Appends one JSON object per line to
+/// docs/classification_log.jsonl so the AI's inputs and raw responses can be
+/// reviewed for the Ausarbeitung/journal. Failures are swallowed: logging must
+/// never affect the classify response. Override the path with the
+/// CLASSIFICATION_LOG env var.
+void _logClassification({
+  required String text,
+  required List<String> knownCategories,
+  required String? rawResponse,
+  required ExpenseInput input,
+}) {
+  try {
+    final path = Platform.environment['CLASSIFICATION_LOG'] ??
+        '../docs/classification_log.jsonl';
+    final knownLower = knownCategories.map((c) => c.toLowerCase()).toSet();
+    final wasNew = !knownLower.contains(input.category.toLowerCase());
+    final record = <String, Object?>{
+      'timestamp': DateTime.now().toUtc().toIso8601String(),
+      'input_text': text,
+      'known_categories': knownCategories,
+      'raw_response': rawResponse,
+      'parsed_title': input.title,
+      'parsed_category': input.category,
+      'parsed_amount': input.amount,
+      'was_new_category': wasNew,
+    };
+    File(path).writeAsStringSync(
+      '${jsonEncode(record)}\n',
+      mode: FileMode.append,
+    );
+  } catch (e) {
+    print('Classification log write failed (non-fatal): $e');
   }
 }
 

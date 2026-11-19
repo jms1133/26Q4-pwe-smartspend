@@ -24,7 +24,7 @@ Expense _expense({
   return Expense(
     id: id,
     title: title,
-    category: ExpenseCategoryEnum.fromJson(category)!,
+    category: category,
     amount: amount,
     timestamp: timestamp,
     subcategory: subcategory,

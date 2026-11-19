@@ -127,26 +127,49 @@ class AiService {
 
   /// Parses raw expense [text] into a structured [ExpenseInput] by prompting
   /// the model for strict JSON and defensively validating the result.
-  Future<ExpenseInput> classifyExpense(String text) async {
-    final prompt = _buildClassifyPrompt(text);
+  ///
+  /// [knownCategories] is the current list of categories from the database.
+  /// The prompt instructs the model to prefer one of these (so synonyms like
+  /// "groceries" resolve to the existing "food") and only propose a new
+  /// category when none is appropriate. This is the "A" half of the
+  /// synonym-sprawl mitigation; the "C" half (confirm-on-save) lives in the
+  /// client and the find-or-create step on expense creation.
+  /// [onRaw] is an optional logging seam: when provided, it receives the raw
+  /// model response before parsing. Used by the research classification log
+  /// (documentation only — see docs/classification_log.jsonl). It never
+  /// affects the return value or control flow.
+  Future<ExpenseInput> classifyExpense(
+    String text, {
+    List<String> knownCategories = const [],
+    void Function(String raw)? onRaw,
+  }) async {
+    final prompt = _buildClassifyPrompt(text, knownCategories);
     final raw = await callLuna(prompt);
+    onRaw?.call(raw);
     return parseExpenseJson(raw);
   }
 
-  String _buildClassifyPrompt(String text) {
-    final categories =
-        ExpenseInputCategoryEnum.values.map((c) => c.value).join(', ');
+  String _buildClassifyPrompt(String text, List<String> knownCategories) {
+    final categories = knownCategories.isEmpty
+        ? '(no categories defined yet)'
+        : knownCategories.join(', ');
     return '''
 You are an expense parser. Extract a single expense from the user's text and
 respond with ONLY a JSON object (no markdown, no prose) of the form:
 {"title": string, "category": string, "amount": number}
 
 Rules:
-- "category" MUST be exactly one of: $categories
+- Existing categories are: $categories
+- PREFER an existing category. If the expense clearly fits one (including
+  synonyms, e.g. "groceries" -> "food"), use that exact existing name.
+- If none of the existing categories fits, INVENT a new short, specific,
+  lowercase category that describes the expense (e.g. a loan -> "loan", a
+  donation -> "donation", gambling -> "gambling"). Do not create
+  near-duplicates of existing categories.
+- NEVER use a generic catch-all category such as "other", "misc",
+  "miscellaneous" or "sonstiges". Always choose a meaningful, specific name.
 - "amount" is a positive number in euros (no currency symbol).
 - "title" is a short human-readable label for the expense.
-- If you cannot determine a field, use a sensible default ("other" for
-  category).
 
 User text: "$text"
 ''';
@@ -154,7 +177,11 @@ User text: "$text"
 
   /// Converts the model's JSON string into an [ExpenseInput]. Tolerates the
   /// model wrapping the JSON in prose or code fences by extracting the first
-  /// `{...}` block. Unknown categories fall back to `other`.
+  /// `{...}` block. `category` is now free text (the server find-or-creates
+  /// it). The prompt forbids generic catch-alls and tells the model to invent
+  /// a specific category when nothing fits; `other` survives here only as a
+  /// last-resort fallback for a genuinely empty/missing category, and is no
+  /// longer seeded or offered to the model.
   static ExpenseInput parseExpenseJson(String raw) {
     final jsonSlice = _extractJsonObject(raw);
     if (jsonSlice == null) {
@@ -182,8 +209,11 @@ User text: "$text"
       throw AiServiceException('AI JSON missing valid "amount": $raw');
     }
 
-    final category = ExpenseInputCategoryEnum.fromJson(map['category']) ??
-        ExpenseInputCategoryEnum.other;
+    final rawCategory = (map['category'] as String?)?.trim();
+    // Last-resort fallback only: the prompt instructs the model to always
+    // provide a specific category, so this should rarely trigger.
+    final category =
+        (rawCategory == null || rawCategory.isEmpty) ? 'other' : rawCategory;
 
     return ExpenseInput(
       title: title,

@@ -1,4 +1,4 @@
-import 'package:flutter/foundation.dart';
+import 'package:flutter/foundation.dart' hide Category;
 import 'package:openapi/api.dart';
 
 class ExpenseProvider extends ChangeNotifier {
@@ -7,10 +7,14 @@ class ExpenseProvider extends ChangeNotifier {
   final DefaultApi _api;
 
   List<Expense> _expenses = <Expense>[];
+  List<Category> _categories = <Category>[];
   bool _isLoading = false;
   String? _error;
 
   List<Expense> get expenses => List.unmodifiable(_expenses);
+  List<Category> get categories => List.unmodifiable(_categories);
+  List<String> get categoryNames =>
+      _categories.map((category) => category.name).toList();
   bool get isLoading => _isLoading;
   String? get error => _error;
 
@@ -23,7 +27,7 @@ class ExpenseProvider extends ChangeNotifier {
     final totals = <String, double>{};
     for (final expense in _expenses) {
       totals.update(
-        expense.category.value,
+        expense.category,
         (value) => value + expense.amount,
         ifAbsent: () => expense.amount,
       );
@@ -124,6 +128,20 @@ class ExpenseProvider extends ChangeNotifier {
       '${date.year.toString().padLeft(4, '0')}-'
       '${date.month.toString().padLeft(2, '0')}';
 
+  /// Loads the available categories so the form dropdown can offer the
+  /// existing set. Failures are non-fatal: the form can still free-text a
+  /// category, which the server find-or-creates on save.
+  Future<void> loadCategories() async {
+    try {
+      final result = await _api.listCategories();
+      _categories = result ?? <Category>[];
+      notifyListeners();
+    } catch (e) {
+      _error = 'Failed to load categories: $e';
+      notifyListeners();
+    }
+  }
+
   Future<void> loadExpenses() async {
     _isLoading = true;
     _error = null;
@@ -174,6 +192,24 @@ class ExpenseProvider extends ChangeNotifier {
       return true;
     } catch (e) {
       _error = 'Failed to update expense: $e';
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<bool> addCategory(String name) async {
+    try {
+      final created = await _api.createCategory(CategoryInput(name: name));
+      if (created != null &&
+          !_categories.any((c) =>
+              c.name.toLowerCase() == created.name.toLowerCase())) {
+        _categories = [..._categories, created];
+        notifyListeners();
+      }
+      _error = null;
+      return true;
+    } catch (e) {
+      _error = 'Failed to create category: $e';
       notifyListeners();
       return false;
     }

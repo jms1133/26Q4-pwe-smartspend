@@ -61,14 +61,18 @@ Class | Method | HTTP request | Description
 ------------ | ------------- | ------------- | -------------
 *DefaultApi* | [**chat**](doc//DefaultApi.md#chat) | **POST** /chat | Send a message to ChatGPT
 *DefaultApi* | [**classifyText**](doc//DefaultApi.md#classifytext) | **POST** /classify | Classify raw expense text into a structured ExpenseInput
+*DefaultApi* | [**createCategory**](doc//DefaultApi.md#createcategory) | **POST** /categories | Create a category if it does not already exist (find-or-create)
 *DefaultApi* | [**createExpense**](doc//DefaultApi.md#createexpense) | **POST** /expenses | Create a new expense
 *DefaultApi* | [**deleteExpense**](doc//DefaultApi.md#deleteexpense) | **DELETE** /expenses/{id} | Delete an expense
+*DefaultApi* | [**listCategories**](doc//DefaultApi.md#listcategories) | **GET** /categories | List all known expense categories
 *DefaultApi* | [**listExpenses**](doc//DefaultApi.md#listexpenses) | **GET** /expenses | List all expenses
 *DefaultApi* | [**updateExpense**](doc//DefaultApi.md#updateexpense) | **PUT** /expenses/{id} | Update an existing expense
 
 
 ## Documentation For Models
 
+ - [Category](doc//Category.md)
+ - [CategoryInput](doc//CategoryInput.md)
  - [ClassifyInput](doc//ClassifyInput.md)
  - [Expense](doc//Expense.md)
  - [ExpenseInput](doc//ExpenseInput.md)
