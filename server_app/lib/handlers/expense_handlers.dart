@@ -1,31 +1,76 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:postgres/postgres.dart';
 import 'package:shelf/shelf.dart';
-import 'package:sqlite3/sqlite3.dart';
 import 'package:openapi/api.dart';
 import 'package:server_app/handlers/category_handlers.dart';
 import 'package:server_app/services/ai_service.dart';
 
-/// Converts a single SQLite [Row] into the generated [Expense] model.
+/// Columns returned by every expense query, in one place so SELECT and
+/// RETURNING stay in sync with [_rowToExpense].
+const _expenseColumns =
+    'id, title, category, subcategory, description, amount, timestamp';
+
+/// Converts a single PostgreSQL [ResultRow] into the generated [Expense] model.
 ///
-/// This is the "map-to-object" bridge: sqlite3 gives us a row that behaves
-/// like a `Map<String, dynamic>` (you can do `row['title']`), and we lift
-/// that into the strongly-typed class that the OpenAPI generator wrote for
-/// us in /openapi/lib/model/expense.dart.
-Expense _rowToExpense(Row row) {
+/// This is the "map-to-object" bridge: `toColumnMap()` turns the row into a
+/// `Map<String, dynamic>` keyed by column name, and we lift that into the
+/// strongly-typed class that the OpenAPI generator wrote for us in
+/// /openapi/lib/model/expense.dart. TIMESTAMPTZ arrives as a UTC `DateTime`.
+/// NUMERIC arrives as a `String` (e.g. "12.50"): the postgres package does
+/// not convert it to `double` itself, because that could lose digits. The
+/// API's `amount` is a JSON number (`double`), so we parse it here. With at
+/// most 12 significant digits this is lossless in the sense that the double
+/// prints back as the same 2-decimal value.
+Expense _rowToExpense(ResultRow row) {
+  final map = row.toColumnMap();
   return Expense(
-    id: row['id'] as int,
-    title: row['title'] as String,
-    category: row['category'] as String,
-    subcategory: row['subcategory'] as String?,
-    description: row['description'] as String?,
-    amount: row['amount'] as double,
-    timestamp: DateTime.parse(row['timestamp'] as String),
+    id: map['id'] as int,
+    title: map['title'] as String,
+    category: map['category'] as String,
+    subcategory: map['subcategory'] as String?,
+    description: map['description'] as String?,
+    amount: double.parse(map['amount'] as String),
+    timestamp: map['timestamp'] as DateTime,
   );
 }
 
-Response listExpensesHandler(Request request, Database db) {
-  final rows = db.select('SELECT * FROM expenses ORDER BY timestamp DESC');
+/// Returns the request body as an [ExpenseInput], or null if it is not a
+/// JSON object with all required keys.
+///
+/// The explicit key check matters: the generated `fromJson` only checks
+/// required keys inside an `assert()`, which is stripped in production builds.
+ExpenseInput? _parseExpenseInput(Object? json) {
+  if (json is! Map ||
+      !ExpenseInput.requiredKeys.every(
+        (key) => json.containsKey(key) && json[key] != null,
+      )) {
+    return null;
+  }
+  return ExpenseInput.fromJson(json);
+}
+
+/// Largest absolute value `NUMERIC(12, 2)` can store is 9,999,999,999.99.
+const _amountLimit = 1e10;
+
+/// Converts the API's `double` amount into the exact decimal string that is
+/// sent as a NUMERIC parameter, or returns null if it doesn't fit the column.
+///
+/// `toStringAsFixed(2)` rounds to cents and never produces exponent notation
+/// (`1e-7`) for values below the limit, which the postgres package's NUMERIC
+/// encoder would reject. Checking here turns an out-of-range amount into a
+/// 400 instead of a database overflow error (500).
+String? _amountToNumeric(double amount) {
+  if (!amount.isFinite) return null;
+  final fixed = amount.toStringAsFixed(2);
+  if (double.parse(fixed).abs() >= _amountLimit) return null;
+  return fixed;
+}
+
+Future<Response> listExpensesHandler(Request request, Session db) async {
+  final rows = await db.execute(
+    'SELECT $_expenseColumns FROM expenses ORDER BY timestamp DESC, id DESC',
+  );
   final expenses = rows.map(_rowToExpense).toList();
 
   return Response.ok(
@@ -34,49 +79,41 @@ Response listExpensesHandler(Request request, Database db) {
   );
 }
 
-Future<Response> createExpenseHandler(Request request, Database db) async {
+Future<Response> createExpenseHandler(Request request, Session db) async {
   try {
-    final payload = await request.readAsString();
-    final json = jsonDecode(payload);
-
-    if (json is! Map ||
-        !ExpenseInput.requiredKeys.every(
-          (key) => json.containsKey(key) && json[key] != null,
-        )) {
-      return Response.badRequest(body: 'Invalid expense payload.');
-    }
-
-    final input = ExpenseInput.fromJson(json);
+    final input = _parseExpenseInput(jsonDecode(await request.readAsString()));
     if (input == null) {
       return Response.badRequest(body: 'Invalid expense payload.');
+    }
+    final amount = _amountToNumeric(input.amount);
+    if (amount == null) {
+      return Response.badRequest(body: 'Field "amount" is out of range.');
     }
 
     // Find-or-create the category so a new one (from the AI or the user)
     // is registered. We store the canonical name from the categories table
     // so casing stays consistent across expenses.
-    final category = findOrCreateCategory(db, input.category);
-    final categoryName = category['name'] as String;
+    final (:category, created: _) =
+        await findOrCreateCategory(db, input.category);
 
-    final timestamp = DateTime.now().toUtc().toIso8601String();
-
-    db.execute(
-      '''
-      INSERT INTO expenses (title, category, subcategory, description, amount, timestamp)
-      VALUES (?, ?, ?, ?, ?, ?)
-      ''',
-      [
-        input.title,
-        categoryName,
-        input.subcategory,
-        input.description,
-        input.amount,
-        timestamp,
-      ],
+    // `timestamp` is filled by the column DEFAULT now(). RETURNING hands back
+    // the stored row in the same round trip, replacing SQLite's
+    // lastInsertRowId + a second SELECT.
+    final rows = await db.execute(
+      Sql.named('''
+        INSERT INTO expenses (title, category, subcategory, description, amount)
+        VALUES (@title, @category, @subcategory, @description, @amount)
+        RETURNING $_expenseColumns
+      '''),
+      parameters: {
+        'title': input.title,
+        'category': category['name'],
+        'subcategory': input.subcategory,
+        'description': input.description,
+        'amount': TypedValue(Type.numeric, amount),
+      },
     );
-
-    final newId = db.lastInsertRowId;
-    final row = db.select('SELECT * FROM expenses WHERE id = ?', [newId]).first;
-    final expense = _rowToExpense(row);
+    final expense = _rowToExpense(rows.first);
 
     return Response(
       201,
@@ -91,7 +128,7 @@ Future<Response> createExpenseHandler(Request request, Database db) async {
 
 Future<Response> updateExpenseHandler(
   Request request,
-  Database db,
+  Session db,
   String idParam,
 ) async {
   try {
@@ -100,47 +137,49 @@ Future<Response> updateExpenseHandler(
       return Response.badRequest(body: 'Invalid expense id.');
     }
 
-    final existing = db.select('SELECT id FROM expenses WHERE id = ?', [id]);
+    final existing = await db.execute(
+      Sql.named('SELECT 1 FROM expenses WHERE id = @id'),
+      parameters: {'id': id},
+    );
     if (existing.isEmpty) {
       return Response.notFound('Expense not found.');
     }
 
-    final payload = await request.readAsString();
-    final json = jsonDecode(payload);
-
-    if (json is! Map ||
-        !ExpenseInput.requiredKeys.every(
-          (key) => json.containsKey(key) && json[key] != null,
-        )) {
-      return Response.badRequest(body: 'Invalid expense payload.');
-    }
-
-    final input = ExpenseInput.fromJson(json);
+    final input = _parseExpenseInput(jsonDecode(await request.readAsString()));
     if (input == null) {
       return Response.badRequest(body: 'Invalid expense payload.');
     }
+    final amount = _amountToNumeric(input.amount);
+    if (amount == null) {
+      return Response.badRequest(body: 'Field "amount" is out of range.');
+    }
 
-    final category = findOrCreateCategory(db, input.category);
-    final categoryName = category['name'] as String;
+    final (:category, created: _) =
+        await findOrCreateCategory(db, input.category);
 
-    db.execute(
-      '''
-      UPDATE expenses
-      SET title = ?, category = ?, subcategory = ?, description = ?, amount = ?
-      WHERE id = ?
-      ''',
-      [
-        input.title,
-        categoryName,
-        input.subcategory,
-        input.description,
-        input.amount,
-        id,
-      ],
+    final rows = await db.execute(
+      Sql.named('''
+        UPDATE expenses
+        SET title = @title, category = @category, subcategory = @subcategory,
+            description = @description, amount = @amount
+        WHERE id = @id
+        RETURNING $_expenseColumns
+      '''),
+      parameters: {
+        'id': id,
+        'title': input.title,
+        'category': category['name'],
+        'subcategory': input.subcategory,
+        'description': input.description,
+        'amount': TypedValue(Type.numeric, amount),
+      },
     );
-
-    final row = db.select('SELECT * FROM expenses WHERE id = ?', [id]).first;
-    final expense = _rowToExpense(row);
+    // The row can vanish between the existence check and the UPDATE if a
+    // concurrent DELETE wins; report that as 404 rather than crashing.
+    if (rows.isEmpty) {
+      return Response.notFound('Expense not found.');
+    }
+    final expense = _rowToExpense(rows.first);
 
     return Response.ok(
       jsonEncode(expense.toJson()),
@@ -158,7 +197,7 @@ Future<Response> updateExpenseHandler(
 Future<Response> classifyHandler(
   Request request,
   AiService aiService,
-  Database db,
+  Session db,
 ) async {
   try {
     final payload = await request.readAsString();
@@ -175,9 +214,9 @@ Future<Response> classifyHandler(
 
     // Pass the current categories so the AI prefers an existing one over a
     // near-duplicate (synonym-sprawl mitigation).
-    final categoryRows = db.select('SELECT name FROM categories');
-    final knownCategories =
-        categoryRows.map((r) => r['name'] as String).toList();
+    final categoryRows =
+        await db.execute('SELECT name FROM categories ORDER BY lower(name)');
+    final knownCategories = categoryRows.map((r) => r[0] as String).toList();
 
     String? rawResponse;
     final input = await aiService.classifyExpense(
@@ -244,17 +283,24 @@ void _logClassification({
   }
 }
 
-Response deleteExpenseHandler(Request request, Database db, String idParam) {
+Future<Response> deleteExpenseHandler(
+  Request request,
+  Session db,
+  String idParam,
+) async {
   final id = int.tryParse(idParam);
   if (id == null) {
     return Response.badRequest(body: 'Invalid expense id.');
   }
 
-  final existing = db.select('SELECT id FROM expenses WHERE id = ?', [id]);
-  if (existing.isEmpty) {
+  // affectedRows replaces the separate existence check: one statement, and
+  // no window for a concurrent delete between check and delete.
+  final result = await db.execute(
+    Sql.named('DELETE FROM expenses WHERE id = @id'),
+    parameters: {'id': id},
+  );
+  if (result.affectedRows == 0) {
     return Response.notFound('Expense not found.');
   }
-
-  db.execute('DELETE FROM expenses WHERE id = ?', [id]);
   return Response(204);
 }
