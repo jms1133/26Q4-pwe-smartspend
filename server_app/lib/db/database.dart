@@ -1,61 +1,38 @@
-import 'dart:io';
-import 'package:sqlite3/sqlite3.dart';
+import 'package:postgres/postgres.dart';
+import 'package:server_app/db/db_config.dart';
+import 'package:server_app/db/migrations.dart';
 
-/// The category names seeded on first initialization. These used to be the
-/// fixed `category` enum in `api.yaml`; they now live as data so the AI (or
-/// user) can introduce new categories at runtime. Seeding preserves the
-/// original set so existing expenses and the form dropdown still have them.
-const List<String> seedCategories = [
-  'food',
-  'transport',
-  'entertainment',
-  'housing',
-  'health',
-  'insurance',
-  'shopping',
-  'subscriptions',
-  'education',
-];
-
-/// Opens (and creates if needed) the SQLite database file, and ensures the
-/// `expenses` and `categories` tables exist. The `categories` table is seeded
-/// with [seedCategories] the first time it is created.
+/// Opens a connection pool to PostgreSQL and brings the schema up to date by
+/// applying the numbered SQL files in [migrationsDir] (see migrations.dart).
 ///
-/// Note: sqlite3's Dart API is synchronous (no `Future`/`await` needed) —
-/// unlike most Dart I/O, the native SQLite C library does the file access
-/// in a blocking call under the hood. This is fine for a single-process
-/// shelf server at this scale.
-Database openExpenseDatabase({String path = 'smart_spend.db'}) {
-  final dbFile = File(path);
-  final db = sqlite3.open(dbFile.path);
+/// Unlike the old synchronous sqlite3 API, every database call now goes over
+/// the network, so it returns a `Future` and must be `await`ed. The handlers
+/// receive the pool as a [Session]: each `execute` borrows a free connection,
+/// runs the statement and gives the connection back, so concurrent requests
+/// don't block each other.
+Future<Pool> openExpenseDatabase(
+  DbConfig config, {
+  String migrationsDir = 'migrations',
+}) async {
+  // Read the files before connecting, so a broken migrations directory fails
+  // without any network round trip.
+  final migrations = loadMigrations(migrationsDir);
 
-  db.execute('''
-    CREATE TABLE IF NOT EXISTS expenses (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      title TEXT NOT NULL,
-      category TEXT NOT NULL,
-      subcategory TEXT,
-      description TEXT,
-      amount REAL NOT NULL,
-      timestamp TEXT NOT NULL
-    )
-  ''');
-
-  // `name COLLATE NOCASE UNIQUE` makes the dedup case-insensitive at the DB
-  // level: inserting "Food" when "food" exists is rejected, so find-or-create
-  // (via INSERT OR IGNORE) converges on a single canonical row per concept.
-  db.execute('''
-    CREATE TABLE IF NOT EXISTS categories (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL COLLATE NOCASE UNIQUE
-    )
-  ''');
-
-  final stmt = db.prepare('INSERT OR IGNORE INTO categories (name) VALUES (?)');
-  for (final name in seedCategories) {
-    stmt.execute([name]);
+  final pool = Pool.withEndpoints(
+    [config.endpoint],
+    settings: const PoolSettings(
+      maxConnectionCount: 10,
+      sslMode: DbConfig.sslMode,
+    ),
+  );
+  try {
+    final applied = await applyMigrations(pool, migrations);
+    if (applied.isNotEmpty) {
+      print('Applied database migrations: ${applied.join(', ')}');
+    }
+  } catch (_) {
+    await pool.close();
+    rethrow;
   }
-  stmt.dispose();
-
-  return db;
+  return pool;
 }

@@ -3,8 +3,9 @@ import 'package:shelf/shelf.dart';
 import 'package:shelf/shelf_io.dart' as shelf_io;
 import 'package:shelf_router/shelf_router.dart';
 import 'dart:convert';
-import 'package:sqlite3/sqlite3.dart';
+import 'package:postgres/postgres.dart';
 import 'package:server_app/db/database.dart';
+import 'package:server_app/db/db_config.dart';
 import 'package:server_app/handlers/expense_handlers.dart';
 import 'package:server_app/handlers/category_handlers.dart';
 import 'package:server_app/services/ai_service.dart';
@@ -29,7 +30,7 @@ Middleware handleCors() {
   };
 }
 
-Router buildRouter(Database db, AiService aiService) {
+Router buildRouter(Session db, AiService aiService) {
   return Router()
     ..get('/', _rootHandler)
     ..get('/echo/<message>', _echoHandler)
@@ -80,11 +81,10 @@ void main(List<String> args) async {
   // Use any available host or container IP (usually `0.0.0.0`).
   final ip = InternetAddress.anyIPv4;
 
-  // Open the SQLite file once at startup. The same Database instance is
-  // reused across all requests — sqlite3 handles concurrent access safely
-  // for a single-process server like this.
-  final dbPath = Platform.environment['DB_PATH'] ?? 'smart_spend.db';
-  final db = openExpenseDatabase(path: dbPath);
+  // Open one connection pool at startup and share it across all requests.
+  // Connection settings come from the env / repo-root .env (see DbConfig),
+  // the same values Docker Compose uses for the `db` container.
+  final db = await openExpenseDatabase(DbConfig.fromEnvironment());
   final aiService = AiService();
   final router = buildRouter(db, aiService);
 

@@ -48,7 +48,7 @@ Verteilte Client-Server-Architektur mit zentraler Datenbank und einem externen
 KI-Dienst:
 
 ```
-[ Flutter Web Client ]  --HTTP/JSON-->  [ Dart shelf Server ]  --SQL-->  [ SQLite ]
+[ Flutter Web Client ]  --HTTP/JSON-->  [ Dart shelf Server ]  --SQL-->  [ PostgreSQL 16 (Docker) ]
    provider (State)                         CRUD + /classify
                                                  |
                                                  +--HTTPS-->  [ gpt-6-luna (OpenAI) ]
@@ -64,17 +64,19 @@ KI-Dienst:
 | Backend | Dart, `shelf`, `shelf_router` | `server_app/bin/`, `server_app/lib/` | REST-API, CORS, DB-Zugriff |
 | API-Vertrag | OpenAPI 3.0 | `api.yaml` | Single Source of Truth Client�Server |
 | Generierter Client | OpenAPI Generator (Dart) | `openapi/` | typisierter API-Client (read-only) |
-| Persistenz | SQLite (`sqlite3`) | `server_app/lib/db/` | Speicherung der Ausgaben |
+| Persistenz | PostgreSQL 16 in Docker Compose, Dart-Paket `postgres` (Connection-Pool) | `server_app/lib/db/`, `docker-compose.yml` | Speicherung der Ausgaben und Kategorien |
 | KI | `gpt-6-luna` via HTTPS | `server_app/lib/services/ai_service.dart` | Text-Klassifizierung |
 
 ### 3.3 Datenmodell
 
-Tabelle `expenses` (SQLite): `id` (PK, autoincrement), `title`, `category`,
-`subcategory` (optional), `description` (optional), `amount` (REAL),
-`timestamp` (TEXT, ISO-8601).
+Tabelle `expenses` (PostgreSQL): `id` (PK, `GENERATED ALWAYS AS IDENTITY`), `title`, `category`,
+`subcategory` (optional), `description` (optional), `amount` (`NUMERIC(12, 2)`, exakte
+Cent-Betraege; in der API weiterhin `number`, Umrechnung nur im Handler),
+`timestamp` (`TIMESTAMPTZ`, Default `now()`; in der API als ISO-8601 in UTC).
 
-Tabelle `categories` (SQLite): `id` (PK), `name` (`COLLATE NOCASE UNIQUE`).
-Beim ersten Start mit 9 Basiskategorien befuellt (Seeding). `other` ist
+Tabelle `categories` (PostgreSQL): `id` (PK, Identity), `name` mit Unique-Index auf `lower(name)` (case-insensitive Eindeutigkeit, ersetzt SQLites `COLLATE NOCASE`).
+Schema und Seed (9 Basiskategorien) stehen in der Migration
+`server_app/migrations/001_initial_schema.sql` (siehe Entwurfsentscheidung 7). `other` ist
 bewusst **nicht** Teil des Seeds (siehe Abschnitt 5, Entwurfsentscheidung 6).
 
 Im API-Vertrag: `ExpenseInput` (vom Client gesendet) und `Expense` (`allOf`
@@ -143,6 +145,14 @@ Modellverhaltens fuer diese Ausarbeitung (vgl. Journal 7, 8, 9).
   anerkennend bei sinnvollen Kaeufen) im vorhandenen `description`-Feld. Prompt
   enthaelt positive UND negative Beispiele plus Sprach-/"nie beleidigend"-Regel.
   Feld in "KI-Kommentar" umbenannt, frei editierbar. 24 Backend-Tests. Journal 9.
+- **Phase 0 (Infrastruktur), Schritt 3 - PostgreSQL-Migration:** DB-Schicht von
+  `sqlite3` auf das Paket `postgres` (Connection-Pool) umgestellt; Handler sind
+  jetzt durchgehend `async`. Schema per nummerierten SQL-Migrationen mit
+  `schema_version`-Tabelle, `IDENTITY`-Spalten statt `AUTOINCREMENT`,
+  `NUMERIC(12, 2)` fuer Betraege, `TIMESTAMPTZ` statt ISO-Text, Unique-Index auf `lower(name)` statt
+  `COLLATE NOCASE`, Find-or-create als ein `INSERT ... ON CONFLICT ... DO UPDATE
+  ... RETURNING`, `RETURNING` statt `lastInsertRowId`. Verbindungsdaten aus
+  `.env`/Umgebung (`DbConfig`). 51 Backend-Tests.
 
 ## 5. Entwurfsentscheidungen (Auswahl)
 
@@ -164,32 +174,50 @@ Kurzfassung:
 5. **Analytics als "Views":** Auswertungen sind Projektionen �ber die bereits im
    Provider gecachten Daten  kein zus�tzlicher Backend-Endpunkt. (Journal 6)
 6. **Kategorien als Daten, aber diszipliniert:** `category` wurde vom festen
-   Enum zu einer DB-Tabelle (find-or-create, `COLLATE NOCASE`). Gegen
+   Enum zu einer DB-Tabelle (find-or-create, case-insensitive; heute per Unique-Index auf `lower(name)`). Gegen
    Synonym-Wildwuchs wirkt A+C: der KI-Prompt bevorzugt bestehende Kategorien
    (A), neue entstehen erst beim Speichern (C). `other` ist bewusst nicht mehr
    geseedet und wird dem Modell nicht angeboten - es ueberlebt nur als
    Not-Fallback fuer eine leere Modellantwort. Begruendung: ein Seed-Wert ist
    fuer das Modell auch ein Signal; `other` als bequemer Sammeltopf verhindert
    spezifische Kategorien. (Journal 7)
+7. **PostgreSQL statt SQLite, Zugangsdaten nur im Server:** der Server liest
+   Host/Port/DB/User/Passwort aus Umgebungsvariablen bzw. der `.env` im
+   Repo-Root (dieselbe Datei wie Docker Compose), ohne Default-Passwort.
+   Das Schema wird ueber nummerierte SQL-Dateien (`server_app/migrations/NNN_name.sql`)
+   verwaltet: beim Start wendet der Server alle noch nicht in `schema_version`
+   eingetragenen Dateien in einer Transaktion an (Advisory-Lock gegen parallele
+   Starts, bei Fehler kompletter Rollback). Bereits angewendete Dateien werden nie
+   geaendert, Aenderungen (z. B. `users` fuer den Login) kommen als neue Datei.
+   Eigener kleiner Runner statt Bibliothek, da nur Vorwaerts-Migrationen noetig sind.
 
 ## 6. Qualit�tssicherung
 
-- **Automatische Tests:** Backend `dart test` (24, inkl. Server-CRUD, AI-Parsing
+- **Automatische Tests:** Backend `dart test` (51, inkl. Server-CRUD, Betraege und Kategorien gegen PostgreSQL, Migrationen, DB-Konfiguration, AI-Parsing
   mit Unterkategorien und KI-Kommentar sowie Kategorien-Handler); Frontend
   `flutter test` (6 Provider + 12 Analytics = 18). Alle gr�n.
 - **Statische Analyse:** `dart analyze` und `flutter analyze` ohne Befunde.
 - **Teststrategie:** Provider-Tests laufen gegen einen `FakeDefaultApi`
   (kein Server/DB n�tig); zeitbasierte Analytics-Methoden erhalten ein
   injizierbares `now` f�r deterministische Tests.
+- **Datenbank-Isolation in Tests:** jeder Server-Test legt eine eigene,
+  zufaellig benannte PostgreSQL-Datenbank (`smart_spend_test_<zeit>_<zufall>`)
+  an und loescht sie danach (`DROP DATABASE ... WITH (FORCE)`). Parallele
+  Testlaeufe (z. B. mehrere Agents) teilen sich so einen `db`-Container, ohne
+  sich gegenseitig Daten zu ueberschreiben, und jeder Test durchlaeuft die echten
+  Migrationen. Ersetzt SQLites `:memory:`.
 
 > TODO: Screenshots einf�gen (Dashboard, Formular, Analytics, KI-Parsing).
 
 ## 7. Lokale Ausf�hrung
 
-Zwei Prozesse (Backend zuerst). Details inkl. Troubleshooting in `README.md`,
+PostgreSQL-Container plus zwei Prozesse (Datenbank, dann Backend, dann Frontend). Details inkl. Troubleshooting in `README.md`,
 Abschnitt 5. Kurz:
 
 ```bash
+# Einmalig: cp .env.example .env und POSTGRES_PASSWORD setzen
+docker compose up -d --wait                   # PostgreSQL 16 auf 127.0.0.1:5432
+
 # Terminal 1  Backend
 cd server_app && dart run bin/server.dart     # http://0.0.0.0:8082
 

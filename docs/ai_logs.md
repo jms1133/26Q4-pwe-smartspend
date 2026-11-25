@@ -488,4 +488,67 @@ Phase 0 runs as one sequential session. One subsection per step, each using the 
 - **Verification:** `docker compose config` without a password fails with the custom message. With `--env-file .env.example` it resolves to `host_ip: 127.0.0.1`. `docker compose up -d --wait` reached `healthy`. `psql select version()` returned PostgreSQL 16.14. `git check-ignore`: `.env` is ignored, `.env.example` is not. No containers or volumes were left over.
 - **Open questions:** Server-side DB connection config (host/port/user/password from env) is part of the migration step.
 
-<!-- Append Step 3 (SQLite → PostgreSQL migration), Step 4 (SonarQube), Step 5 (GitHub Actions) below in the same format. -->
+### Step 3 – SQLite → PostgreSQL migration (phase0/postgres-migration)
+- **Goal:** Move `server_app/lib/db/` and all handlers from `sqlite3` to PostgreSQL. The server reads its connection config from env, the schema is managed by versioned migrations, and tests get an isolated database that is safe for parallel agents.
+- **Key prompts:**
+  - "I believe that phase 0 is complete but check" → the agent found Steps 3–5 not started. "ok go ahead".
+  - Review before commit: "Is the migration mechanism in place (schema_version table + numbered SQL files applied at startup)? If not, add it; Login depends on it. What type is amount? It should be NUMERIC(12,2) … Is find-or-create race-safe via INSERT ... ON CONFLICT ((lower(name))) DO UPDATE ... RETURNING id? Does the config read DB_HOST (default localhost)? … record database-per-test as a deliberate deviation from the agreed schema-per-run … No data import."
+- **AI output:**
+  - `pubspec.yaml`: `sqlite3` replaced by `postgres: ^3.7.0`.
+  - New `lib/db/db_config.dart`: `DbConfig.fromEnvironment()` reads `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `DB_PORT` and the optional `DB_HOST` (default `localhost`). Process env takes precedence over the repo-root `../.env`. Defaults match `docker-compose.yml`, except the password, which throws a `StateError` if missing. `SslMode.disable`, because the package defaults to `require`.
+  - New `lib/db/migrations.dart` + `server_app/migrations/001_initial_schema.sql`:
+    - `loadMigrations(dir)` reads `NNN_description.sql` files sorted by version. A `.sql` file with an invalid name or a duplicate version is a `StateError`; non-SQL files are ignored.
+    - `applyMigrations(db, migrations)` runs in one transaction: `pg_advisory_xact_lock`, `CREATE TABLE IF NOT EXISTS schema_version (version, name, applied_at)`, then every file whose version is not recorded yet (`QueryMode.simple`, so a file may hold several statements), plus its `schema_version` row. A failure rolls back the whole call. A version in the DB that the code doesn't know is a `StateError` (DB newer than server).
+    - `001_initial_schema.sql`: `GENERATED ALWAYS AS IDENTITY` ids, `amount NUMERIC(12, 2)`, `timestamp TIMESTAMPTZ DEFAULT now()`, unique index on `lower(categories.name)` (replaces `COLLATE NOCASE UNIQUE`), seed of the 9 categories (`other` deliberately not seeded).
+  - `lib/db/database.dart`: `openExpenseDatabase(DbConfig, {migrationsDir = 'migrations'})` loads the files, opens a `Pool` (max 10 connections), applies migrations and prints `Applied database migrations: …` when something was applied.
+  - Handlers take a `Session` and are all `async`.
+    - `findOrCreateCategory`: one statement, `INSERT … ON CONFLICT ((lower(name))) DO UPDATE SET name = categories.name RETURNING id, name, (xmax = 0) AS created`. The no-op update makes RETURNING yield the existing row; `xmax = 0` tells 201 from 200 without a second query.
+    - `amount`: `_rowToExpense` parses the NUMERIC `String` into the API's `double`. Writes go through `_amountToNumeric`: `toStringAsFixed(2)` (rounds to cents, no exponent notation) sent as `Type.numeric`; non-finite or `|amount| >= 1e10` returns 400 instead of a DB overflow 500.
+    - Create and update use `RETURNING`, which replaces `lastInsertRowId` plus a re-select. Update returns 404 if a concurrent delete wins.
+    - Delete uses `affectedRows` instead of a pre-check.
+    - The list is ordered `timestamp DESC, id DESC`.
+    - Duplicate payload validation was extracted into `_parseExpenseInput`.
+  - `bin/server.dart`: `DB_PATH` removed, pool opened from `DbConfig.fromEnvironment()`.
+  - Tests: new `test/support/test_database.dart` (`TestDatabases.create()/drop()` via the `postgres` maintenance DB). `server_test.dart` creates `smart_spend_test_<micros>_<random>` per test and starts the server with `POSTGRES_DB` set to it; `tearDown` waits for the process to exit, then `DROP DATABASE … WITH (FORCE)`. New `test/migrations_test.dart`.
+  - Docs: `.env.example` (comment + optional `DB_HOST`), `README.md`/`CLAUDE.md` database line, `documentation.md` §3.1/3.2/3.3/4/5 (decision 7)/6/7.
+- **Deliberate deviation from the agreed plan:** test isolation is **database-per-test**, not the agreed **schema-per-run**. Reasons:
+  - The server under test runs as a child process (`dart run bin/server.dart`) with its own pool. With schema-per-run, every pooled connection would need `search_path` set, and the server code has no hook for that without test-only code in production paths.
+  - Several tests assert on a fresh state ("empty array on a fresh database", seeded category list). A schema shared by a whole run would need truncation and re-seeding between tests, which duplicates the seed outside the migration.
+  - A fresh database per test also runs the real migration path on every test.
+  - Cleanup is one `DROP DATABASE … WITH (FORCE)`, which also ends connections the killed server left open.
+  - Random names keep parallel agents on one Compose `db` apart, which was the goal of schema-per-run.
+  - Cost: about 3 s per server test (DB create + server start + migration).
+- **Alternatives considered:**
+  - Transaction rollback per test: rejected because the server runs in a child process with its own pool.
+  - Testcontainers or a separate test container per agent: rejected because it adds complexity, and one `db` with random DB names is enough.
+  - A migration library: not used. A ~100-line runner with a `schema_version` table covers the needs (forward-only, transactional DDL) without a dependency.
+  - `citext` for `categories.name`: rejected because it needs an extension, while a functional unique index has the same effect.
+  - Find-or-create via `DO NOTHING` + SELECT fallback (first version): replaced by `DO UPDATE … RETURNING` (one statement, always returns a row).
+  - A single CTE (`INSERT … RETURNING UNION SELECT`) for find-or-create: rejected because the outer SELECT uses the statement snapshot and may not see a row that a parallel transaction just committed.
+  - `DOUBLE PRECISION` for `amount` (first version): replaced by `NUMERIC(12, 2)` after review, so cents are stored exactly. The API contract stays `number`/`double`; the conversion happens only in the handler.
+- **Problems and corrections:**
+  - First version had no migration mechanism (`CREATE … IF NOT EXISTS` in `initializeSchema`), `DOUBLE PRECISION`, a two-statement find-or-create and host default `127.0.0.1`. All four were changed after Julian's review.
+  - The `postgres` package decodes NUMERIC as `String` and its encoder rejects exponent notation, hence `toStringAsFixed(2)` before sending.
+  - `127.0.0.1` vs `localhost`: Compose binds IPv4 only, and `localhost` resolves to `127.0.0.1` and `::1` on macOS. A live connection with host `localhost` to the container succeeded (the socket connect tries each address), so the default is now `localhost`.
+  - The `postgres` package defaults to `SslMode.require` (seen in its source, `resolved_settings.dart`), while the stock `postgres:16` image has TLS off. `SslMode.disable` was set from the start. Not observed as a runtime failure.
+  - During the smoke test, a stale dev server from an earlier run held port 8099, so the first run failed with `Address already in use`. Killed it and reran.
+  - `docs/documentation.md` is not valid UTF-8 (mixed encoding), so it was edited line-by-line with `sed` and the untouched lines were diffed byte-identical. Conversion is left for a separate commit.
+  - No data import: the old `server_app/smart_spend.db` (git-ignored) is not migrated. A seed script with fictional data comes later.
+- **Verification:**
+  - Throwaway Compose project `smartspend-verify` on port 55432.
+  - `dart analyze lib test bin`: clean.
+  - `dart test`: 51/51.
+    - 24 existing tests.
+    - 8 `db_config` unit tests.
+    - 8 migration tests: sorting and non-SQL files ignored, invalid name, duplicate version, missing directory, repo directory loads; applies once and is idempotent and a later file is applied on top; a failing migration rolls back everything incl. `schema_version`; an unknown DB version throws.
+    - 11 new server tests: case-insensitive category reuse on expense create, UTC timestamp, cents stored exactly (0.1 + 0.2 + 1234567890.12), rounding to cents (1.239 → 1.24), integer JSON amount, out-of-range amount → 400 on create and update (9999999999.99 accepted), seeded/sorted category list, 201 on a new category, 200 + same row on case-variant, 5 concurrent POSTs of case variants → one 201, four 200, one id, one row, 400 on blank name.
+  - After the run, no `smart_spend_test_%` databases remained.
+  - Manual smoke test on an empty DB: first start printed `Applied database migrations: 1`; POST with `Kinokarten für Ü-18 €`, category `Entertainment`, amount `0.1` returned `entertainment`, `0.1`, umlauts intact; `psql` showed `amount = 0.10` of type `numeric(12,2)`. Second start printed no migration line, the row was still listed, `schema_version` had one row.
+  - Startup fails fast: a wrong password gives `28P01 password authentication failed`, and a missing password gives a `StateError` with setup instructions.
+  - `down -v` removed the container and volume.
+  - **Not verified:** the Flutter app end-to-end (create, list, edit, delete) against the PostgreSQL backend. Julian tests it manually.
+- **Open questions:**
+  - `dart test` now requires the `db` container, which the CI pipeline (Step 5) needs as a service container.
+  - The shelf server is still not in Compose. In a container it needs `DB_HOST=db`, and the `Dockerfile` (scratch image with only `bin/server`) must also copy `server_app/migrations/`, since the runner reads them from disk relative to the working directory.
+
+<!-- Append Step 4 (SonarQube), Step 5 (GitHub Actions) below in the same format. -->

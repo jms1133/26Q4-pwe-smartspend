@@ -16,7 +16,7 @@ dependencies:
   openapi:
     path: ../openapi
   shelf_cors_headers: 0.1.5
-  sqlite3: ^2.4.6
+  postgres: ^3.7.0
 
 dev_dependencies:
   lints: ^6.0.0

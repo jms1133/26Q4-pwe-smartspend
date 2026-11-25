@@ -17,7 +17,7 @@ Roadmap and agent phases: `docs/development-plan.md` (read when starting a phase
 - `openapi/` – generated client, READ-ONLY
 - `docs/` – `documentation.md` (Ausarbeitung, German), `ai_logs.md` (AI logs),
   `ai_engineering_journal.md` (Julian's own journal)
-- Database: SQLite now, PostgreSQL in Docker planned
+- Database: PostgreSQL 16 via Docker Compose (`docker compose up -d --wait`); server reads `POSTGRES_*`/`DB_PORT`/`DB_HOST` from env or the repo-root `.env`. `dart test` needs the `db` container running.
 
 ## Rules
 1. **MoSCoW:** Must-haves before Should/Could. Follow the order in the development plan.
@@ -32,6 +32,18 @@ Roadmap and agent phases: `docs/development-plan.md` (read when starting a phase
    or after merging. Parallel agents never edit it.
 7. **Hidden framework behavior:** Point out when `notifyListeners()` is needed, and explain
    CORS, shelf_router and async request handling when relevant.
+
+## Workflow
+9. **Session start:** compare `.claude/current_state.md` with `git status` and
+   `git log`; report differences before doing anything else.
+10. **Plan first:** for each step, propose a plan and wait for approval. Once
+    approved, write the agreed decisions into `docs/development-plan.md` under
+    that step before writing code.
+11. **Done checklist:** every step brief ends with a numbered done list. The
+    final report answers each item with evidence (command output, test names)
+    or says "not done". Items marked "Julian" are mine to verify.
+12. **Session end:** the main session updates `.claude/current_state.md`
+    (branches, open PRs, open points) before finishing.
 
 ## How to explain things to me
 - Write complete, production-ready code; don't withhold it. Explain the "why".
