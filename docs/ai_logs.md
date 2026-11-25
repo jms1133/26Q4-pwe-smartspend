@@ -465,3 +465,27 @@ fixed port 8082 and can leave a process behind if a run is interrupted, which
 surfaced here as spurious `server_test` failures until 8082 was freed.)
 
 ---
+
+## Entry 10 – Phase 0: Infrastructure (2026-11-25)
+
+Phase 0 runs as one sequential session. One subsection per step, each using the template fields.
+
+### Step 1 – Configurable test port (phase0/configurable-test-port, PR #9)
+- **Goal:** `server_test.dart` started the server on fixed port 8082, so parallel agents and stale test servers collided.
+- **Key prompts:** Plan item in `docs/development-plan.md`: "Make the test server port configurable". The agent first proposed a `TEST_SERVER_PORT` env variable (default 8082). Julian's correction: "start the server with PORT=0, print the bound port, parse it in the test, use 127.0.0.1."
+- **AI output:** `server_app/test/server_test.dart` starts the server with `PORT=0` (the OS picks a free port) and `DB_PATH=':memory:'`. It parses the bound port from the `Server running on http://host:port` startup line, connects via `http://127.0.0.1:$port`, drains stdout with `listen()`, and fails after a 30s startup timeout.
+- **Alternatives considered:** A fixed port per agent via env (`TEST_SERVER_PORT`) was rejected because it needs manual coordination and still collides with stale processes. `localhost` was rejected because on macOS it can resolve to `::1` first, while the server binds IPv4 only (`anyIPv4`). Reading only `.first` from stdout was rejected because an undrained pipe can fill up and block the child process.
+- **Problems and corrections:** Julian rejected the `TEST_SERVER_PORT` proposal in favor of `PORT=0` with port parsing. Julian raised the startup timeout to 30s. The timeout error message still said "15s" and was corrected to "30s".
+- **Verification:** `dart analyze lib test` clean, `dart test` 24/24.
+- **Open questions:** none.
+
+### Step 2 – Docker Compose + PostgreSQL (phase0/docker-compose-postgres)
+- **Goal:** Run PostgreSQL in Docker Compose as the base for the SQLite → PostgreSQL migration.
+- **Key prompts:** "docker-compose.yml + PostgreSQL … bind 127.0.0.1:${DB_PORT:-5432}:5432, pg_isready healthcheck, pinned major (postgres:16), .env gitignored with committed .env.example."
+- **AI output:** `docker-compose.yml` with one `db` service (`postgres:16`, named volume `db_data`, `restart: unless-stopped`, `pg_isready` healthcheck at 5s interval / 10 retries / 10s start period). `.env.example` contains `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `DB_PORT`. `.gitignore` adds `.env` and `!.env.example`. `.worktreeinclude` lists `.env` and `server_app/secrets.json` so they are copied into agent worktrees.
+- **Alternatives considered:** Binding to `0.0.0.0` was rejected because it exposes the DB to the network. `postgres:latest` was rejected because major upgrades change the on-disk format. A default password was rejected: `POSTGRES_PASSWORD` uses `${VAR:?msg}`, so Compose refuses to start without it. Shelf server and SonarQube containers were left for later Phase 0 steps.
+- **Problems and corrections:** In the live check, a shell variable assignment (`P=…`) failed under zsh, so the throwaway stack ran under the default project name `smart-spend` instead of a separate one. `down -v` still removed the container, network and volume.
+- **Verification:** `docker compose config` without a password fails with the custom message. With `--env-file .env.example` it resolves to `host_ip: 127.0.0.1`. `docker compose up -d --wait` reached `healthy`. `psql select version()` returned PostgreSQL 16.14. `git check-ignore`: `.env` is ignored, `.env.example` is not. No containers or volumes were left over.
+- **Open questions:** Server-side DB connection config (host/port/user/password from env) is part of the migration step.
+
+<!-- Append Step 3 (SQLite → PostgreSQL migration), Step 4 (SonarQube), Step 5 (GitHub Actions) below in the same format. -->

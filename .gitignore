@@ -1,6 +1,8 @@
 # Sensitive credentials
 secrets.json
 **/secrets.json
+.env
+!.env.example
 
 # Operating System files
 .DS_Store

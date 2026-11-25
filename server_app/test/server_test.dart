@@ -44,7 +44,7 @@ void main() {
     final port = await boundPort.future.timeout(
       const Duration(seconds: 30),
       onTimeout: () =>
-          throw StateError('Server did not report a bound port within 15s'),
+          throw StateError('Server did not report a bound port within 30s'),
     );
     host = 'http://127.0.0.1:$port';
   });
