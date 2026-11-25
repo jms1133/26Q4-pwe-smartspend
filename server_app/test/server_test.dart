@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -5,21 +6,47 @@ import 'package:http/http.dart';
 import 'package:test/test.dart';
 
 void main() {
-  final port = '8082';
-  final host = 'http://localhost:$port';
   late Process p;
+  late String host;
 
   setUp(() async {
+    // PORT=0 lets the OS pick a free port, so parallel test runs (e.g.
+    // multiple agents) never collide on a fixed 8082. The server prints the
+    // port it actually bound to; we parse it from that startup line below.
+    //
+    // DB_PATH=':memory:' gives each test run a fresh, isolated SQLite
+    // database that lives only in RAM and disappears when the process
+    // is killed — so tests never touch or pollute smart_spend.db.
     p = await Process.start(
       'dart',
       ['run', 'bin/server.dart'],
-      // DB_PATH=':memory:' gives each test run a fresh, isolated SQLite
-      // database that lives only in RAM and disappears when the process
-      // is killed — so tests never touch or pollute smart_spend.db.
-      environment: {'PORT': port, 'DB_PATH': ':memory:'},
+      environment: {'PORT': '0', 'DB_PATH': ':memory:'},
     );
-    // Wait for server to start and print to stdout.
-    await p.stdout.first;
+
+    // Keep draining stdout with listen() (not just .first) so the child's
+    // output buffer can't fill up and block the server. Parse only the PORT
+    // from the "Server running on http://host:port" line, then build our own
+    // URL. We connect to 127.0.0.1 (not localhost): on macOS localhost can
+    // resolve to ::1 first, but the server binds IPv4 only (anyIPv4).
+    final boundPort = Completer<String>();
+    p.stdout
+        .transform(utf8.decoder)
+        .transform(const LineSplitter())
+        .listen((line) {
+      final match =
+          RegExp(r'Server running on http://\S+:(\d+)').firstMatch(line);
+      if (match != null && !boundPort.isCompleted) {
+        boundPort.complete(match.group(1));
+      }
+    });
+    p.stderr.transform(utf8.decoder).listen(stderr.write);
+
+    final port = await boundPort.future.timeout(
+      const Duration(seconds: 30),
+      onTimeout: () =>
+          throw StateError('Server did not report a bound port within 15s'),
+    );
+    host = 'http://127.0.0.1:$port';
   });
 
   tearDown(() => p.kill());
