@@ -11,4 +11,6 @@ Thumbs.db
 .idea/
 *.swp
 
-.claude
+.claude/settings.local.json
+.claude/worktrees/
+docs/archive/

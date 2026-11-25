@@ -1,10 +1,18 @@
-# AI Engineering Journal  Smart Spend
+# AI Logs – Smart Spend
 
-This journal documents significant interactions with the AI pair programmer
-during development, as required by the course. Each entry follows the format:
-**Context** (the problem), **Interaction** (prompts and key AI output), and
-**Reflection** (what worked, what needed adjustment, how it was verified, and
-what was learned).
+Factual records of AI-assisted work (Claude Code). Entries 1–9 were written in the
+earlier Context / Interaction / Reflection format; new entries use the template below.
+Julian's own reflections are in `ai_engineering_journal.md`.
+
+## Template
+### Entry N – <feature> (YYYY-MM-DD, branch)
+- **Goal:** what Julian asked for
+- **Key prompts:** Julian's most important prompts
+- **AI output:** main code and architecture decisions, with file names
+- **Alternatives considered:** and why they were rejected
+- **Problems and corrections:** AI mistakes, and what Julian changed or rejected
+- **Verification:** tests added, results, manual checks
+- **Open questions:**
 
 ---
 
