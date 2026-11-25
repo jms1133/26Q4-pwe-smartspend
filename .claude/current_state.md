@@ -74,20 +74,46 @@
   in Journal 9 Addendum: with few-shot prompting the EXAMPLES dominate the
   instruction — change what you *show*, not just what you *say*. Still 24/24.
 
+## Phase 0 — Infrastructure (in progress, see `docs/development-plan.md`)
+
+Logged in `docs/ai_logs.md` Entry 10 "Phase 0: Infrastructure", one subsection
+per step. Append Steps 3–5 there (marker comment at the end of the entry).
+
+- **Step 1 — Configurable test port** — MERGED (PR #9). `server_test.dart`
+  starts the server with `PORT=0` + `DB_PATH=':memory:'`, parses the bound port
+  from the startup line, connects via `127.0.0.1`, drains stdout with `listen()`,
+  30s startup timeout. Julian rejected the first proposal (`TEST_SERVER_PORT`).
+- **Step 2 — Docker Compose + PostgreSQL** — MERGED (PR #10).
+  `docker-compose.yml`: `db` service, `postgres:16`, bound to
+  `127.0.0.1:${DB_PORT:-5432}`, `pg_isready` healthcheck, volume `db_data`.
+  `POSTGRES_PASSWORD` is required (`${VAR:?msg}`, no default). `.env` is
+  git-ignored, template `.env.example` committed. `.worktreeinclude` copies
+  `.env` + `server_app/secrets.json` into agent worktrees. Live-checked:
+  healthy, PostgreSQL 16.14. Also fixed the timeout message (15s → 30s).
+- **Step 3 — SQLite → PostgreSQL migration of the DB layer** — NEXT.
+- **Step 4 — SonarQube** in Compose — pending.
+- **Step 5 — Basic GitHub Actions pipeline** — pending.
+
 ## Branch State
 
-- `main` — everything through dynamic categories, AI subcategories and
-  KI-Kommentar. Context restructuring (CLAUDE.md in repo root, docs/ai_logs.md,
-  development-plan.md) committed on top.
-- No open feature branches.
+- `main` — everything above, including Phase 0 Steps 1–2 (PR #9, PR #10).
+- `phase0/configurable-test-port`, `phase0/docker-compose-postgres` — merged;
+  local + remote branches can be deleted.
 
+## Resume Here (Phase 0, Step 3: PostgreSQL migration)
 
-## Resume Here (next feature: Login)
+Migrate `server_app/lib/db/` from SQLite (`sqlite3`) to PostgreSQL. Open points:
+- Server reads DB connection config (host/port/db/user/password) from env,
+  matching the names in `.env.example`.
+- Tests currently use SQLite `:memory:` for isolation; decide how tests get an
+  isolated PostgreSQL DB (e.g. separate DB name per run/agent) without
+  breaking parallel agents.
+- SQLite specifics to port: `COLLATE NOCASE UNIQUE` on `categories.name`
+  (case-insensitive find-or-create), autoincrement ids, timestamp handling.
 
-AI subcategories is finished (see above). The agreed **next step** is the
-**Login system** (see `documentation.md` §8 item 1): user table, password
-hashing, auth endpoints, token/session, auth middleware, `user_id` FK on
-`expenses`. It is the prerequisite for correct multi-user sync.
+After Phase 0: **Login system** (`docs/development-plan.md` feature 2): `users`
+table, password hashing, register/login endpoints, JWT, auth middleware,
+`user_id` FK on `expenses` and categories.
 
 Optional subcategory follow-ups if revisited later: analytics drill-down by
 subcategory; promote subcategory to its own managed vocabulary only if the
@@ -98,6 +124,10 @@ only. True synonyms rely on the AI prompt (A) + user review (C). Embedding-
 similarity dedup remains descoped.
 
 ## Verification (last run)
+
+- Phase 0 Step 2: `docker compose config` fails without `POSTGRES_PASSWORD`;
+  `up -d --wait` → healthy; backend `dart analyze lib test` clean, `dart test`
+  24/24 (after the 30s message fix).
 
 - `flutter analyze` — clean; `flutter test` — **18/18** pass (6 provider +
   12 analytics).
@@ -110,16 +140,14 @@ similarity dedup remains descoped.
 
 ## Immediate Next Steps (in order)
 
-1. **Commit** the AI-subcategories + KI-Kommentar work (code + Journals 8/9 +
-   documentation.md) on `feature/dynamic-subcategories`, then **open the PR**
-   into `main`.
-2. **Login system** — see "Resume Here" above.
-3. **Remaining planned features:** Sync (via Docker deployment) → Android.
-   See `documentation.md` §8 for the dependency order.
-3. **Phase 5 — `docs/documentation.md`** scaffolded (German, 9 sections) with
-   TODOs for architecture diagram, screenshots, and final Fazit. 30% of grade —
-   extend as features land. Tracked in the repo.
-4. **Deployment — Docker** (Backend & DB) not started.
+1. **Phase 0 Step 3** — PostgreSQL migration (see "Resume Here").
+2. **Phase 0 Step 4** — SonarQube in `docker-compose.yml`.
+3. **Phase 0 Step 5** — basic GitHub Actions pipeline.
+4. **Login system**, then the remaining features in `docs/development-plan.md`
+   order (Login UI → redesign → sync → Android).
+5. **`docs/documentation.md`** (German, 30% of grade) — still has TODOs for the
+   architecture diagram, screenshots and Fazit. Add the Docker/PostgreSQL setup
+   once Step 3 lands. Shelf server container is not in Compose yet.
 
 ## Docs / Journal Policy
 
@@ -150,10 +178,14 @@ dart pub get
 dart test                         # server_test.dart + ai_service_test.dart
 dart run bin/server.dart          # port 8082, smart_spend.db, reads secrets.json
 PORT=9000 DB_PATH=':memory:' dart run bin/server.dart
-# GOTCHA: server_test.dart spawns a REAL server on fixed port 8082 and waits on
-# its first stdout line. If a prior run was interrupted, a stale process can hold
-# 8082 and every test fails with "Bad state: No element" at server_test.dart:22.
-# Fix: lsof -tiTCP:8082 -sTCP:LISTEN | xargs kill, then re-run.
+# server_test.dart now uses PORT=0 (OS-assigned port), so a stale dev server on
+# 8082 no longer breaks tests. It still blocks `dart run bin/server.dart`:
+# lsof -tiTCP:8082 -sTCP:LISTEN | xargs kill
+
+# PostgreSQL (from repo root; first time: cp .env.example .env, set a password):
+docker compose up -d --wait
+docker compose exec db psql -U smart_spend -d smart_spend
+docker compose down          # add -v to also delete the db_data volume
 
 # Frontend (from flutter_application/):
 flutter pub get
