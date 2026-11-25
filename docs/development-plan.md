@@ -95,6 +95,23 @@ The app gets a consistent character: a grumpy uncle who is an accountant by prof
 - GitHub Actions on every push: `dart analyze`, `dart test`, `flutter analyze`, `flutter test`, SonarQube.
 - Claude records a factual AI log entry per feature in `docs/ai_logs.md`; Julian writes `docs/ai_engineering_journal.md` himself. `documentation.md` update committed with each feature.
 
+## Step brief template
+
+Every step gets a brief in this format, filled in under its phase below
+once the plan is approved.
+
+```
+**Step N – <name>** · branch `<phase>/<name>` from `main`
+Goal: …
+Agreed decisions: 1. … 2. …
+Out of scope: …
+Done:
+1. `dart analyze lib test` clean, `dart test` all green (show output)
+2. …
+3. (Julian) end-to-end check in the Flutter app
+4. AI log entry appended; docs updated
+```
+
 ## Work order and agents
 
 Parallel Claude Code sessions, each in its own git worktree and branch (`claude --worktree <name>`).
