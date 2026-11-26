@@ -1,10 +1,21 @@
 import 'package:flutter/foundation.dart' hide Category;
 import 'package:openapi/api.dart';
 
+import '../services/api_errors.dart';
+
 class ExpenseProvider extends ChangeNotifier {
-  ExpenseProvider(this._api);
+  ExpenseProvider(this._api, {this.onUnauthorized});
 
   final DefaultApi _api;
+
+  /// Called when the server answers 401 (token missing, invalid or
+  /// expired). `main.dart` wires it to `AuthProvider.logout`.
+  VoidCallback? onUnauthorized;
+
+  /// Incremented by [clear]. Each request remembers the value it started
+  /// with; a response that arrives after a logout or user switch no longer
+  /// matches and is dropped, so it can't fill the lists of the next user.
+  int _session = 0;
 
   List<Expense> _expenses = <Expense>[];
   List<Category> _categories = <Category>[];
@@ -128,39 +139,56 @@ class ExpenseProvider extends ChangeNotifier {
       '${date.year.toString().padLeft(4, '0')}-'
       '${date.month.toString().padLeft(2, '0')}';
 
+  /// Empties all user data, e.g. on logout. Requests still in flight are
+  /// ignored when they return (see [_session]).
+  void clear() {
+    _session++;
+    _expenses = <Expense>[];
+    _categories = <Category>[];
+    _isLoading = false;
+    _error = null;
+    notifyListeners();
+  }
+
   /// Loads the available categories so the form dropdown can offer the
   /// existing set. Failures are non-fatal: the form can still free-text a
   /// category, which the server find-or-creates on save.
   Future<void> loadCategories() async {
+    final session = _session;
     try {
       final result = await _api.listCategories();
+      if (session != _session) return;
       _categories = result ?? <Category>[];
       notifyListeners();
     } catch (e) {
-      _error = 'Failed to load categories: $e';
-      notifyListeners();
+      _handleError(e, session, 'Failed to load categories');
     }
   }
 
   Future<void> loadExpenses() async {
+    final session = _session;
     _isLoading = true;
     _error = null;
     notifyListeners();
 
     try {
       final result = await _api.listExpenses();
+      if (session != _session) return;
       _expenses = result ?? <Expense>[];
-    } catch (e) {
-      _error = 'Failed to load expenses: $e';
-    } finally {
       _isLoading = false;
       notifyListeners();
+    } catch (e) {
+      if (session != _session) return;
+      _isLoading = false;
+      _handleError(e, session, 'Failed to load expenses');
     }
   }
 
   Future<bool> addExpense(ExpenseInput input) async {
+    final session = _session;
     try {
       final created = await _api.createExpense(input);
+      if (session != _session) return false;
       if (created != null) {
         _expenses = [..._expenses, created];
       } else {
@@ -170,15 +198,16 @@ class ExpenseProvider extends ChangeNotifier {
       notifyListeners();
       return true;
     } catch (e) {
-      _error = 'Failed to create expense: $e';
-      notifyListeners();
+      _handleError(e, session, 'Failed to create expense');
       return false;
     }
   }
 
   Future<bool> editExpense(int id, ExpenseInput input) async {
+    final session = _session;
     try {
       final updated = await _api.updateExpense(id, input);
+      if (session != _session) return false;
       if (updated != null) {
         _expenses = [
           for (final expense in _expenses)
@@ -191,15 +220,16 @@ class ExpenseProvider extends ChangeNotifier {
       notifyListeners();
       return true;
     } catch (e) {
-      _error = 'Failed to update expense: $e';
-      notifyListeners();
+      _handleError(e, session, 'Failed to update expense');
       return false;
     }
   }
 
   Future<bool> addCategory(String name) async {
+    final session = _session;
     try {
       final created = await _api.createCategory(CategoryInput(name: name));
+      if (session != _session) return false;
       if (created != null &&
           !_categories.any((c) =>
               c.name.toLowerCase() == created.name.toLowerCase())) {
@@ -209,23 +239,37 @@ class ExpenseProvider extends ChangeNotifier {
       _error = null;
       return true;
     } catch (e) {
-      _error = 'Failed to create category: $e';
-      notifyListeners();
+      _handleError(e, session, 'Failed to create category');
       return false;
     }
   }
 
   Future<bool> removeExpense(int id) async {
+    final session = _session;
     try {
       await _api.deleteExpense(id);
+      if (session != _session) return false;
       _expenses = _expenses.where((expense) => expense.id != id).toList();
       _error = null;
       notifyListeners();
       return true;
     } catch (e) {
-      _error = 'Failed to delete expense: $e';
-      notifyListeners();
+      _handleError(e, session, 'Failed to delete expense');
       return false;
     }
+  }
+
+  /// A 401 ends the session via [onUnauthorized] (which clears this
+  /// provider) instead of showing an error. Errors from an older session
+  /// are dropped like stale responses.
+  void _handleError(Object error, int session, String action) {
+    if (session != _session) return;
+    final callback = onUnauthorized;
+    if (isUnauthorized(error) && callback != null) {
+      callback();
+      return;
+    }
+    _error = describeApiError(error, action);
+    notifyListeners();
   }
 }

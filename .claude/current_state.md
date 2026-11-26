@@ -1,334 +1,82 @@
 # Current State — Claude Context & Handoff
 
-> Single source of truth for picking up where the last session left off.
-> Imported by the repo-root `CLAUDE.md`. Roadmap and step briefs live in
-> `docs/development-plan.md`. Keep this file current at the end of a session.
->
-> This file holds *operational* state (branches, what's done, next steps). The
-> per-feature reflections live in `/docs/ai_engineering_journal.md`, which
-> Julian writes himself (CLAUDE.md rule 5). Don't duplicate reflections here —
-> just point to the journal entry number.
+> What a new session needs to resume: branches, current step, next steps,
+> open points, last verification. Imported by `CLAUDE.md` (rule 12).
+> Decisions per step: briefs in `docs/development-plan.md`. What was done and
+> why: `docs/ai_logs.md` (Entries 1–12). Julian's reflections:
+> `docs/ai_engineering_journal.md` (9 entries, never edited by Claude).
 
-## Phases Done (see journal for reflections)
+## Done so far
 
-- **Phase 1 — API Contract (`api.yaml`)** — `Expense`/`ExpenseInput` schemas,
-  category enum, CRUD paths, `POST /classify`. Journal 1. Client regenerated
-  into `/openapi` after every change (NEVER hand-edit `/openapi`).
-- **Phase 2 — Backend CRUD (`server_app`)** — SQLite via `sqlite3`, shelf
-  handlers + `classifyHandler`, `buildRouter()`, CORS, **port 8082**.
-  `test/server_test.dart` = 11 tests (`:memory:`). Journals 2, 3.
-- **Phase 3 — Flutter CRUD UI (`flutter_application`)** — `ExpenseProvider`
-  (ChangeNotifier), DashboardScreen + ExpenseFormScreen, basePath
-  `http://localhost:8082`. Journal 4.
-- **Phase 4 — AI Classification (`gpt-6-luna`)** — `AiService` (secrets.json/env
-  key precedence, defensive `parseExpenseJson`), `POST /classify`, "Parse with
-  AI" field on the New Expense form. 7 ai_service tests. Journal 5. MERGED (PR #2).
-- **UTF-8 outbound fix** — `callLuna` encodes body as explicit UTF-8 bytes +
-  `charset=utf-8` (umlauts/€ now round-trip). MERGED (PR #3).
-- **Analytics Dashboard (frontend-only)** — provider getters
-  (`spendByCategory`, `spendByMonth`, `monthOverMonthChange`, etc., all with an
-  injectable `now` seam), `fl_chart` pie + bar, Analytics tab. 12 new provider
-  tests. Journal 6. **MERGED (PR #4).**
-- **Dynamic Categories (feature #1)** — DONE on `feature/dynamic-categories`
-  (committed + pushed by user). `category` moved from a fixed enum to a runtime
-  `categories` table so the AI/user can add new ones. Synonym-sprawl mitigation
-  = A+C: AI prompt prefers existing categories (A), new ones only materialize
-  when the user saves (C, find-or-create on `POST /expenses`). Dropdown = AI
-  suggestion (labeled "(new)") + existing list + "+ Add new category…" free-text.
-  `other` removed from the seed + no longer offered to the model (kept only as an
-  empty-response fallback). Research-only `docs/classification_log.jsonl`
-  (JSONL via an `onRaw` seam) records each `/classify` call for the Ausarbeitung.
-  Journal 7 written; `documentation.md` §3.3/§4/§5/§6/§8 updated. 19 backend tests
-  green, 18 flutter tests green.
-- **AI Subcategories (feature #2)** — DONE on `feature/dynamic-categories`.
-  The data layer already carried `subcategory` end-to-end (api.yaml, generated
-  client, DB column, both expense handlers, form field, dashboard subtitle), so
-  only the AI path needed work and NO OpenAPI regen was required. Changes:
-  (1) `/classify` prompt now asks for optional `"subcategory": string|null` — a
-  finer tag under a STABLE top-level category (casino → entertainment/gambling);
-  (2) `parseExpenseJson` reads it defensively (trimmed, empty/missing → null);
-  (3) form `_classify` fills the existing Subcategory field from
-  `parsed.subcategory ?? ''`; (4) `_logClassification` gained `parsed_subcategory`.
-  Subcategory is free text (NOT a second find-or-create table) by design.
-  Journal 8 written; `documentation.md` §3.3/§4/§6/§8 updated. 22 backend tests
-  green (+3 subcategory parse), 18 flutter tests green.
-- **KI-Kommentar (feature #3)** — DONE on `feature/dynamic-categories`. Same
-  shape as subcategory; REUSES the existing `description` field (no new field,
-  NO OpenAPI regen). The AI now also returns a short, funny one-sentence comment
-  from a financial-advisor persona — playfully teasing wasteful buys, genuinely
-  approving sensible ones. Key design point: the prompt carries BOTH positive
-  AND negative few-shot examples (tequila/casino jabs + Biogemüse/Notgroschen
-  approval) + "never insulting" + "same language as the user" so it doesn't roast
-  everything. Changes: (1) prompt adds `"description": string`; (2)
-  `parseExpenseJson` normalizes it (trim, empty/missing → null); (3) form
-  `_classify` fills the field, which is relabeled "KI-Kommentar" (2 lines, chat
-  icon, still free-text editable); (4) `_logClassification` gained
-  `parsed_description`. Caveat: comment is generated at classify time and NOT
-  regenerated if the user later edits amount/category. Journal 9 written;
-  `documentation.md` §3.3/§4/§6 updated. 24 backend tests green (+2 description
-  parse), 18 flutter tests green.
-  **Tone follow-up (prompt-only):** first live test was funny for wasteful buys
-  but only *pleasant* for good ones — because the positive few-shot examples
-  were tamer than the negative ones. Fixed by rewriting the positive examples to
-  be equally funny + a "praise as funny as the teasing" clause. Lesson captured
-  in Journal 9 Addendum: with few-shot prompting the EXAMPLES dominate the
-  instruction — change what you *show*, not just what you *say*. Still 24/24.
+Phases 1–4 (API contract, backend CRUD, Flutter CRUD UI, AI classification),
+analytics, dynamic categories, AI subcategories, KI-Kommentar: AI log
+Entries 1–9. Phase 0 infrastructure (Steps 1–6: test port, Docker Compose +
+PostgreSQL, SQLite → PostgreSQL, SonarQube Cloud + GitHub Actions, in-process
+server tests): Entry 10. Step 7 login backend: Entry 11, merged as PR #17.
+Step 8 login UI: Entry 12, done on `feature/login-ui`, PR not yet opened.
 
-## Phase 0 — Infrastructure (COMPLETE, see `docs/development-plan.md`)
+## Branches
 
-Logged in `docs/ai_logs.md` Entry 10 "Phase 0: Infrastructure", one subsection
-per step (Steps 1–5 written).
+- `main` at `dc20c59` (PR #18), protected: required checks Backend, Frontend,
+  SonarQube Cloud scan; no reviews; Julian can bypass (`enforce_admins:
+  false`). No open PRs.
+- **`main` requires login since `c1a4488`**: every route except `OPTIONS`,
+  `/` and `/auth/*` returns 401, and the app on `main` sends no token, so it
+  is unusable until Step 8 merges. Demo fallback: tag `pre-login` on
+  `715d9e0` (pushed); see open point 8.
+- `feature/login-ui` from `dc20c59`: Step 8 complete, 8 commits, local
+  only. Julian pushes and opens the PR.
 
-- **Step 1 — Configurable test port** — MERGED (PR #9). `server_test.dart`
-  starts the server with `PORT=0` + `DB_PATH=':memory:'`, parses the bound port
-  from the startup line, connects via `127.0.0.1`, drains stdout with `listen()`,
-  30s startup timeout. Julian rejected the first proposal (`TEST_SERVER_PORT`).
-- **Step 2 — Docker Compose + PostgreSQL** — MERGED (PR #10).
-  `docker-compose.yml`: `db` service, `postgres:16`, bound to
-  `127.0.0.1:${DB_PORT:-5432}`, `pg_isready` healthcheck, volume `db_data`.
-  `POSTGRES_PASSWORD` is required (`${VAR:?msg}`, no default). `.env` is
-  git-ignored, template `.env.example` committed. `.worktreeinclude` copies
-  `.env` + `server_app/secrets.json` into agent worktrees. Live-checked:
-  healthy, PostgreSQL 16.14. Also fixed the timeout message (15s → 30s).
-- **Step 3 — SQLite → PostgreSQL migration of the DB layer** — MERGED (PR #11).
-  `postgres` package, `db_config.dart` (env or repo-root `.env`), own migration
-  runner (`migrations/NNN_*.sql`, `schema_version` table), `NUMERIC(12,2)`
-  amounts, functional unique index `lower(name)` on categories, find-or-create
-  via `ON CONFLICT … DO UPDATE … RETURNING`. Tests: fresh random
-  `smart_spend_test_*` DB per server test, dropped afterwards. 51/51 green.
-  Details in `docs/ai_logs.md` Entry 10, Step 3.
-- **Steps 4 + 5 — SonarQube Cloud + GitHub Actions** — MERGED (PR #12,
-  merge commit `f5bb297`). CI on `main` green (all three jobs), PR #12 shows 0
-  open SonarQube issues. The first scan had raised 8 MAJOR issues in `ci.yml`
-  (S7637 actions not pinned to SHA, S8550 `pub get` without lockfile), fixed in
-  `7f9a66b`: all actions pinned to full SHAs (tag as comment),
-  `server_app/pubspec.lock` tracked, `--enforce-lockfile` on every `pub get`,
-  `.github/dependabot.yml` (actions + pub, weekly), `sonar-project.properties`
-  without `sonar.sources`/`sonar.tests`, binaries and `tools/**` excluded.
-  Log: `docs/ai_logs.md` Entry 10, "Steps 4 + 5 follow-up".
-  - Test classification: SonarQube Cloud ignores `sonar.tests` AND
-    `sonar.test.inclusions` (scan: "configured but have no effect … The new
-    analysis scope UX analyzes the whole project by default").
-    `sonar.test.inclusions` removed on `chore/state-cleanup`. CORRECTED
-    (PR #17): the scanner's message lists `test/` directories as a test
-    criterion, but the Dart files in `test/` are still indexed as main code
-    (qualifier `FIL`, e.g. `server_app/test/auth_test.dart` with 150 lines
-    to cover), so they counted toward new-code coverage. Fix:
-    `sonar.coverage.exclusions=**/test/**` (still analyzed for issues). No
-    documented property or UI setting classifies them as tests in this mode.
-- **Branch protection on `main`** — set via `gh api` (classic protection):
-  required checks `Backend (analyze + test)`, `Frontend (analyze + test)`,
-  `SonarQube Cloud scan` (app GitHub Actions); `strict: false` (branch need not
-  be up to date); no required reviews; force pushes and deletion blocked;
-  `enforce_admins: false` = Julian (admin) can bypass as a safety valve before
-  the presentation. Note: the `sonar` job is skipped when `SONAR_TOKEN` is
-  missing; a skipped required check counts as passed, so it doesn't block.
-  - Local SonarQube Community Build was tried and REMOVED: it has no Dart
-    analyzer (no plugin in the image, no `dart` language, scan "0 languages
-    detected"). Dart is Developer Edition+ / SonarQube Cloud only.
-  - SonarQube Cloud: org `jms1133`, project `jms1133_26Q4-pwe-smartspend`,
-    Automatic Analysis off, `SONAR_TOKEN` = GitHub repo secret only (not in
-    `.env`/`.env.example`). Config in `sonar-project.properties`.
-  - `.github/workflows/ci.yml`: jobs `backend` (postgres:16 service, analyze,
-    `dart test --coverage-path`), `frontend` (analyze, `flutter test
-    --coverage`), `sonar` (needs both, lcov artifacts, scan action v8; skipped
-    without token). Flutter pinned 3.47.7.
-  - Secret audit of all 32 commits incl. PR refs: clean. Repo is public since
-    creation; GitHub secret scanning + push protection on, 0 alerts.
+## Current step
 
-## Branch State
+Step 8 – Login UI on `feature/login-ui`. Brief: `docs/development-plan.md`,
+"Step 8 – Login UI". AI log Entry 12. Open: Done items 4 (Chrome end-to-end)
+and 5 (CI + SonarQube gate) for Julian. Risk: new-code coverage on
+`main.dart` is low (29 % for the whole file), see Entry 12 open questions.
 
-- `main` — all of Phase 0 (PR #9–#12, #15) + Step 6 (PR #16, `715d9e0`) +
-  Step 7 login backend (PR #17, merge commit `c1a4488`), protected.
-- **`main` requires login since `c1a4488`.** Every route except `OPTIONS`
-  preflights, `/` and `/auth/*` returns 401 without a token, and the
-  Flutter app on `main` sends none, so it gets 401 everywhere until Step 8
-  merges. This deviates from decision C in `docs/development-plan.md` Step 7
-  (back-to-back merge of backend and UI PRs). Demo fallback: tag
-  `pre-login`. Not created yet (no tags local or remote); the last
-  pre-login commit on `main` is `715d9e0` (Julian:
-  `git tag pre-login 715d9e0 && git push origin pre-login`).
-- `feature/login-backend` — MERGED (PR #17), deleted on the remote; local
-  branch can be deleted (`git branch -d feature/login-backend`).
-- Step 8 `feature/login-ui` branches from `main` (at or after `c1a4488`),
-  NOT from `feature/login-backend`.
-- `chore/state-after-login-backend` — from `main` (`c1a4488`): this file's
-  update after PR #17. Julian pushes, opens the PR and merges after green CI.
-- Step 7 summary: `migrations/002_users.sql` (deletes dev expenses/categories,
-  `users`, per-user categories, composite FK `expenses_user_category_fkey`),
-  `lib/auth/` (AuthConfig, PasswordHasher in `Isolate.run`, TokenService
-  HS256-only, RateLimiter, middleware, register/login handlers), all queries
-  filtered by `user_id`, `/echo` removed. 111/111 tests. AI log Entry 11,
-  `documentation.md` §3.5. Julian's local `.env` got a random `JWT_SECRET`;
-  the local dev DB `smart_spend` is still at schema 1, the next server start
-  applies 002 and wipes its expenses/categories (decision B); register a
-  user again afterwards (no seed script yet).
-- PR #17 quality gate: first failed (2 BLOCKER `DELETE` without `WHERE` in
-  002, new coverage 30.7 % because `test/` counted as main code), fixed in
-  `aa16176` (`TRUNCATE`, `sonar.coverage.exclusions=**/test/**`); gate
-  passed with new coverage 93.3 %. Migrations are frozen once merged.
-- Dependabot PRs #13 and #14: closed.
+## Next steps (in order, presentation on 1 December)
 
-## Resume Here — Phase 0 open points
+1. Step 8 Login UI: push, PR, Julian's checks, merge.
+2. Seed script with demo data.
+3. `docs/documentation.md` (German): architecture diagram, screenshots,
+   Fazit, Docker/PostgreSQL setup, auth design. Then README.
+4. In parallel, docs-only agent: encoding fix (open point 3) and README
+   rewrite (open point 2).
 
-1. **In-process server tests.** DONE, MERGED (PR #16, Step 6):
-   `lib/server.dart` `buildHandler()`, tests serve it in-process, one
-   subprocess smoke test in `test/server_startup_test.dart`. 52/52; coverage
-   expense_handlers 63.6 %, category_handlers 90 %, lib/server.dart 70.7 %.
-   Follow-up: `/classify` + `/chat` tests with a fake `HttpClient`. The 48
-   stale `smart_spend_test_*` DBs were dropped (0 left).
-2. **`docs/readme` step:** rewrite `README.md` (currently a copy of
-   `CLAUDE.md`) as a real project README.
-3. **Encoding fix:** SonarQube reports invalid UTF-8 in `docs/documentation.md`
-   (line 16) and `docs/ai_logs.md` (line 45). Find and fix the bytes.
-4. **Seed script:** demo data for the fresh PostgreSQL DB (presentation on
-   1 December).
-5. Small cleanup: drop `sonar.test.inclusions`. DONE (PR #15).
-6. Dependabot PRs #13 and #14: DONE (closed).
-7. **Dependabot `pub` lockfiles don't match Flutter 3.47.7's resolution.**
-   Dependabot's updated `pubspec.lock` fails `flutter pub get
-   --enforce-lockfile` in CI ("Unable to satisfy `pubspec.yaml` using
-   `pubspec.lock`"; it resolves `test_api 0.7.14` and keeps `listen`, Flutter
-   3.47.7 pins `test_api 0.7.12` via the SDK and drops `listen`). So every
-   `pub` Dependabot PR will be red until fixed. Mitigation for now:
-   `.github/dependabot.yml` ignores semver-major `pub` updates until after the
-   course; minor/patch PRs may still hit this. Options later: regenerate the
-   lockfile on the Dependabot branch locally (`flutter pub get`, commit), or
-   pin Dependabot's Flutter version if it becomes configurable.
+Future work: `docs/development-plan.md`, "Priority order after Phase 0".
 
-Still open: the shelf server is not in Compose (needs `DB_HOST=db` and
-`migrations/` copied into the image).
+## Open points
 
-Open for Phase 4: CORS still sends `Access-Control-Allow-Origin: *`
-(`server_app/lib/server.dart:43`, asserted in `test/auth_test.dart:255/262`).
-The development plan requires CORS restricted to the web app's origin.
+1. Follow-up from Step 6: `/classify` and `/chat` tests with a fake
+   `HttpClient`.
+2. `README.md` is a copy of `CLAUDE.md`; rewrite as a project README
+   (docs-only agent, don't touch it otherwise).
+3. SonarQube reports invalid UTF-8 in `docs/documentation.md` (line 16) and
+   `docs/ai_logs.md` (line 45).
+4. Seed script: demo data for the fresh PostgreSQL DB.
+5. Local dev DB: if it was still at schema 1, the next server start applies
+   migration 002 and wipes its expenses/categories; register a user again
+   afterwards. Julian's local `.env` has a random `JWT_SECRET`.
+6. Dependabot `pub` PRs fail `flutter pub get --enforce-lockfile` in CI
+   (Dependabot resolves `test_api 0.7.14`, Flutter 3.47.7 pins `0.7.12`).
+   Semver-major `pub` updates are ignored until after the course; fix by
+   regenerating the lockfile on the Dependabot branch with Flutter 3.47.7.
+7. CORS still sends `Access-Control-Allow-Origin: *`
+   (`server_app/lib/server.dart:43`, asserted in `test/auth_test.dart:255/262`);
+   the plan requires the web app's origin only. Phase 4.
+8. **`pre-login` fallback needs its own empty database.** The dev DB
+   `smart_spend` is at schema 2 after migration 002; the `pre-login` code
+   (`715d9e0`) expects schema 1, so run it against a separate empty DB
+   (e.g. `POSTGRES_DB=smart_spend_prelogin`).
+9. The shelf server is not in Compose (needs `DB_HOST=db` and `migrations/`
+   in the image).
+10. Deferred decision: category dedup is trim + case-insensitive only;
+    synonyms rely on the AI prompt and user review.
 
-Login system backend (Step 7): MERGED (PR #17). Next: Step 8 Login UI on
-`feature/login-ui` from `main` (Flutter: login/register screens, token in a
-provider, `Authorization` header on the generated client, handle 401/429).
-Urgent: the app on `main` is unusable until Step 8 merges (see Branch State).
+## Last verification run
 
-Optional subcategory follow-ups if revisited later: analytics drill-down by
-subcategory; promote subcategory to its own managed vocabulary only if the
-classification log shows the free-text approach sprawling.
-
-**Open decision (still deferred):** category dedup is trim + case-insensitive
-only. True synonyms rely on the AI prompt (A) + user review (C). Embedding-
-similarity dedup remains descoped.
-
-## Verification (last run)
-
-- Step 7 merge (2026-11-26): PR #17 merged as `c1a4488`; all CI checks green,
-  SonarQube Cloud quality gate passed, new coverage 93.3 %.
-- Step 7 (2026-11-26): `dart analyze lib test bin` clean; `dart test` 111/111;
-  coverage auth files 93.7–100 %, expense_handlers 64.3 %, category_handlers
-  90.9 %, server.dart 72.5 %; `actionlint` clean; curl session (throwaway DB,
-  port 8090): register 201, login 200, GET with token 200, without 401 +
-  `WWW-Authenticate` + CORS, preflight 200 with `Authorization` allowed.
-  Not run: `flutter analyze`/`flutter test` against the regenerated client, CI.
-
-- Step 6 (2026-11-26): `dart analyze lib test bin` clean; `dart test
-  --coverage-path=…` 52/52 in 8 s; `dart run bin/server.dart` on 8082,
-  `curl /expenses` 200, `OPTIONS` 200 with CORS headers.
-
-- Phase 0 close-out (2026-11-26): CI run `45801938354` on `main` green
-  (Backend, Frontend, SonarQube Cloud scan); SonarQube issues API for PR #12:
-  0 open; branch protection confirmed via `gh api …/branches/main/protection`.
-- Steps 4 + 5 findings fix: `actionlint` (Docker `rhysd/actionlint`) clean;
-  `pub get --enforce-lockfile` OK in both apps; both analyzers clean;
-  `dart test` 51/51, `flutter test` 18/18.
-- Phase 0 Steps 4 + 5: `docker compose config --services` → `db` only;
-  `dart analyze lib test bin` clean, `dart test --coverage-path=…` 51/51;
-  `flutter analyze` clean, `flutter test --coverage` 18/18; `actionlint` clean.
-- Phase 0 Step 3: `dart analyze lib test bin` clean, `dart test` 51/51 against
-  a throwaway Compose project; manual smoke test on an empty DB.
-- Phase 0 Step 2: `docker compose config` fails without `POSTGRES_PASSWORD`;
-  `up -d --wait` → healthy; backend `dart analyze lib test` clean, `dart test`
-  24/24 (after the 30s message fix).
-
-- `flutter analyze` — clean; `flutter test` — **18/18** pass (6 provider +
-  12 analytics).
-- Backend `dart analyze lib test` clean; `dart test` — **24** pass (server CRUD
-  + ai_service free-text/fallback/subcategory/description + category handlers).
-- `/classify` verified end-to-end + logged to `docs/classification_log.jsonl`
-  (needs valid `api_token` in `server_app/secrets.json`). Before/after evidence
-  in the log: same 4 inputs went other/other/entertainment/food →
-  loan/donation/gambling/investment after the prompt + seed fix.
-
-## Immediate Next Steps (in order)
-
-Agreed order (2026-11-26, `docs/development-plan.md` "Priority order after
-Phase 0"):
-
-1. **Login system backend** (Step 7): DONE, MERGED (PR #17, `c1a4488`).
-2. **Login UI** (Step 8, `feature/login-ui` from `main`). Urgent: `main`
-   returns 401 to the app until this merges.
-3. **Seed script** (demo data for the presentation on 1 December).
-4. **`docs/documentation.md`** (German, 30% of grade): still has TODOs for the
-   architecture diagram, screenshots and Fazit; add the Docker/PostgreSQL
-   setup (Step 3 is merged) and the auth design. Then README.
-
-In parallel: a docs-only agent for the encoding fix (open point 3) and the
-README rewrite (open point 2). Future work after that: redesign, Android,
-sync, budgets, export, Grumpy Uncle, server container.
-
-## Docs / Journal Policy
-
-- `/docs` is tracked in the repo; commit docs alongside the feature they
-  describe. `documentation.md` = Ausarbeitung (German), `ai_logs.md` = factual
-  AI log, `ai_engineering_journal.md` = Julian's graded reflections.
-- **Never write or edit `ai_engineering_journal.md`** (CLAUDE.md rule 5);
-  Julian writes it himself. Claude only points to entry numbers. Currently 9
-  entries (Entry 7 = dynamic categories, Entry 8 = AI subcategories, Entry 9 =
-  KI-Kommentar).
-- After a significant feature, bug fix or architecture decision, Claude writes
-  a factual entry in `docs/ai_logs.md` using the template at its top (CLAUDE.md
-  rule 4). Parallel agents put it in their final summary instead.
-
-## Environment / Useful Commands
-
-Dart/Flutter SDK is NOT on PATH by default. Prepend:
-```bash
-export PATH="/Users/julian.morales/code/FHDW/26Q4/WebEntwicklung/dependencies/flutter/bin/cache/dart-sdk/bin:/Users/julian.morales/code/FHDW/26Q4/WebEntwicklung/dependencies/flutter/bin:$PATH"
-```
-
-```bash
-# Regenerate OpenAPI client after any api.yaml change (from repo root):
-java -jar tools/openapi-generator-cli-7.12.0.jar generate -g dart -i api.yaml -o openapi
-
-# PostgreSQL (from repo root; first time: cp .env.example .env, set a password).
-# Needed for the server AND for `dart test`:
-docker compose up -d --wait
-docker compose exec db psql -U smart_spend -d smart_spend
-docker compose down          # add -v to also delete the db_data volume
-
-# Backend (from server_app/). DB config comes from env or the repo-root .env
-# (POSTGRES_DB/USER/PASSWORD, DB_HOST default localhost, DB_PORT default 5432);
-# JWT_SECRET (>= 32 bytes) is required, BCRYPT_COST optional (default 12);
-# migrations in migrations/ run on startup:
-dart pub get --enforce-lockfile
-dart analyze lib test bin
-dart test                         # creates + drops a smart_spend_test_* DB per server test
-dart test --coverage-path=coverage/lcov.info   # as in CI
-dart run bin/server.dart          # port 8082, reads secrets.json
-PORT=9000 POSTGRES_DB=other_db dart run bin/server.dart
-# server_test.dart spawns `dart`, so the SDK must be on PATH. It uses PORT=0, so
-# a stale dev server on 8082 doesn't break tests, but it still blocks
-# `dart run bin/server.dart`: lsof -tiTCP:8082 -sTCP:LISTEN | xargs kill
-
-# Frontend (from flutter_application/):
-flutter pub get --enforce-lockfile
-flutter analyze && flutter test   # CI: flutter test --coverage
-flutter run -d chrome --web-port=5000
-# Stale UI after a merge: flutter clean && flutter pub get, then Cmd+Shift+R.
-```
-
-## Git Lessons (for the user, learning gh/git)
-
-- `git add .` stages only the CURRENT dir and below — from a subfolder it misses
-  sibling changes. Use the repo root or `git add -A`.
-- `git checkout -b <branch>` does NOT commit working changes; stage+commit after.
-- `git push` alone doesn't open a PR — use `gh pr create` (or the web banner).
-  `-u`/`--set-upstream` links the local branch to its remote.
-- A "Merge pull request" commit sits on top of the feature commit — `main` can
-  look "different" but still contains the work one commit below.
+Step 8 (2026-11-26, `feature/login-ui`): `flutter analyze` clean,
+`flutter test --coverage` 48/48, `flutter pub get --enforce-lockfile` exit 0
+on the committed lock; `server_app`: `dart analyze lib test bin` clean,
+`dart test` 111/111. Not run: Chrome end-to-end, CI. Details:
+`docs/ai_logs.md` Entry 12, "Verification".

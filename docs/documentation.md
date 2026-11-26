@@ -169,6 +169,31 @@ Benutzername) in 15 Minuten, ein erfolgreicher Login setzt den Zaehler zurueck;
 Registrierung 10 Versuche pro IP und Stunde. Danach `429` mit `Retry-After` in Sekunden.
 Abgelaufene Eintraege werden bei jeder Pruefung entfernt.
 
+**Client: Sitzung.** `AuthProvider` (ein `ChangeNotifier`) haelt Token, `expiresAt` und
+Benutzernamen. Der generierte Client bekommt ein `HttpBearerAuth`, dessen `accessToken`
+eine Funktion ist: sie wird bei jeder Anfrage aufgerufen und liefert das aktuelle Token
+(leer = kein Header). So gibt es genau einen `ApiClient`, auch nach einem
+Benutzerwechsel. Die Verdrahtung liegt in `lib/app_services.dart`; `main()` und die
+Widget-Tests nutzen dieselbe. Ein `TokenStore`-Interface speichert die Sitzung, im Web
+ueber `shared_preferences` (= `localStorage`), damit sie einen Reload uebersteht.
+
+**Client: Ablauf.** Beim Start liest `restore()` die gespeicherte Sitzung; bis dahin zeigt
+das `AuthGate` einen Ladeindikator statt kurz die Login-Maske. Ein abgelaufenes Token
+wird verworfen. Registrieren meldet danach automatisch an; scheitert nur dieser Login,
+erscheint "Account created, please log in". Antwortet der Server auf eine geschuetzte
+Anfrage mit `401`, endet die Sitzung mit dem Hinweis "Session expired"; ein `401` von
+`/auth/login` selbst heisst dagegen immer "Invalid username or password". `logout()` ist
+idempotent, damit mehrere gleichzeitige `401` nur eine Zustandsaenderung ausloesen. Beim
+Ende einer Sitzung werden die Ausgabendaten geleert und auf den Navigator gelegte Seiten
+(Formular, Analytics) geschlossen. `429` zeigt die Wartezeit aus `Retry-After`, auf
+Minuten aufgerundet; Netzwerkfehler (der Client verpackt sie als `ApiException(400)` mit
+`innerException`) zeigen "Server not reachable".
+
+**Client: veraltete Antworten.** `ExpenseProvider` zaehlt Sitzungen; `clear()` erhoeht den
+Zaehler. Jede Anfrage merkt sich den Wert beim Start und verwirft ihre Antwort, wenn er
+sich geaendert hat. Sonst koennte eine als `alice` gestartete Anfrage nach dem Login von
+`bob` dessen Liste fuellen.
+
 **Bekannte Grenzen.**
 - `409` bei vergebenem Benutzernamen verraet, dass das Konto existiert. Bewusster
   Kompromiss zugunsten einer verstaendlichen Fehlermeldung; das Register-Limit pro IP
@@ -180,6 +205,11 @@ Abgelaufene Eintraege werden bei jeder Pruefung entfernt.
   Server-Instanzen teilen sie nicht.
 - Kein Refresh-Token und kein Logout auf dem Server: ein ausgegebenes Token bleibt bis
   zum Ablauf (1 Stunde) gueltig.
+- Das Token liegt im `localStorage`. Jedes Skript auf der Seite kann es lesen; eine
+  XSS-Luecke wuerde es preisgeben. Ein `HttpOnly`-Cookie waere sicherer, braucht aber
+  CSRF-Schutz und passt nicht zum generierten Bearer-Client. Die kurze Laufzeit
+  (1 Stunde) begrenzt den Schaden. Fuer Android ist spaeter `flutter_secure_storage`
+  hinter demselben `TokenStore`-Interface vorgesehen.
 
 ## 4. Umsetzung nach Phasen
 
@@ -229,6 +259,10 @@ Abgelaufene Eintraege werden bei jeder Pruefung entfernt.
   Rate-Limits, alle Abfragen pro Nutzer gefiltert (siehe Abschnitt 3.5). Bestehende
   Ausgaben und Kategorien werden von der Migration geloescht (nur Entwicklungsdaten).
   108 Backend-Tests, darunter Isolationstests mit zwei Nutzern in beide Richtungen.
+- **Login-Oberflaeche (Flutter):** `AuthProvider`, `TokenStore` mit `shared_preferences`,
+  Bearer-Token per Getter im generierten Client, `AuthGate` (Ladeindikator, Login,
+  Dashboard), Login/Registrierung in einer Maske, Benutzername und Logout in der
+  AppBar, `401` beendet die Sitzung (siehe Abschnitt 3.5). 48 Frontend-Tests.
 
 ## 5. Entwurfsentscheidungen (Auswahl)
 
@@ -274,14 +308,19 @@ Kurzfassung:
 
 ## 6. Qualit�tssicherung
 
-- **Automatische Tests:** Backend `dart test` (108, inkl. Server-CRUD, Betraege und Kategorien gegen PostgreSQL, Migrationen, DB-Konfiguration, AI-Parsing
+- **Automatische Tests:** Backend `dart test` (111, inkl. Server-CRUD, Betraege und Kategorien gegen PostgreSQL, Migrationen, DB-Konfiguration, AI-Parsing
   mit Unterkategorien und KI-Kommentar, Kategorien-Handler, Registrierung/Login,
   JWT-Varianten, CORS, Rate-Limits und Datentrennung zwischen zwei Nutzern); Frontend
-  `flutter test` (6 Provider + 12 Analytics = 18). Alle gr�n.
+  `flutter test` (48: Provider, Analytics, AuthProvider, TokenStore, Sitzungswechsel
+  und Login-Ablauf als Widget-Tests). Alle gruen.
 - **Statische Analyse:** `dart analyze` und `flutter analyze` ohne Befunde.
 - **Teststrategie:** Provider-Tests laufen gegen einen `FakeDefaultApi`
   (kein Server/DB n�tig); zeitbasierte Analytics-Methoden erhalten ein
   injizierbares `now` f�r deterministische Tests.
+- **Login-Tests:** ein `FakeBackend` auf Basis von `MockClient` (Paket `http`) wird
+  als HTTP-Client in den generierten `ApiClient` gesteckt und antwortet wie der Server
+  (`401`, `409`, `429` mit `Retry-After`). So laufen Bearer-Header, Fehlerzuordnung und
+  `AppServices`-Verdrahtung echt mit.
 - **Datenbank-Isolation in Tests:** jeder Server-Test legt eine eigene,
   zufaellig benannte PostgreSQL-Datenbank (`smart_spend_test_<zeit>_<zufall>`)
   an und loescht sie danach (`DROP DATABASE ... WITH (FORCE)`). Parallele
@@ -312,11 +351,7 @@ cd flutter_application && flutter run -d chrome
 
 Geplante bzw. diskutierte Erweiterungen (nach Aufwand/Abh�ngigkeit geordnet):
 
-1. **Login-Oberflaeche (NAECHSTER SCHRITT):** Login/Registrierung im Flutter-Client,
-   Token im Provider, `Authorization`-Header im generierten Client. Das Backend ist
-   fertig (Abschnitt 3.5). Vorher geplant: Benutzer-Tabelle, Passwort-Hashing,
-   Auth-Endpunkte, Token/Session, Auth-Middleware, `user_id`-Fremdschl�ssel auf
-   `expenses`. Voraussetzung f�r korrekte Mehrbenutzer-Synchronisierung.
+1. **Login-Oberflaeche:** umgesetzt (Abschnitte 3.5 und 4).
 2. **Ger�te-Synchronisierung:** f�llt weitgehend aus dem (Docker-)Deployment
    des Backends ab; pro Nutzer korrekt erst mit Login.
 3. **Android-Version:** gleicher Flutter-Code; ben�tigt eine konfigurierbare
