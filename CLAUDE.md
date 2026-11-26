@@ -33,6 +33,9 @@ Roadmap and agent phases: `docs/development-plan.md` (read when starting a phase
    or after merging. Parallel agents never edit it.
 7. **Hidden framework behavior:** Point out when `notifyListeners()` is needed, and explain
    CORS, shelf_router and async request handling when relevant.
+8. **Identity:** Never write the email address of the logged-in Claude account into
+   code, docs, logs, commit messages or PR descriptions. If attribution is needed,
+   use the GitHub account `jms1133` only, with no email address.
 
 ## Workflow
 9. **Session start:** compare `.claude/current_state.md` with `git status` and
