@@ -156,7 +156,7 @@ Goal: the server handlers show real coverage in SonarQube Cloud. Coverage only m
 Agreed decisions:
 1. `buildRouter`, `handleCors` and the root/echo/chat handlers move from `bin/server.dart` to `lib/server.dart`, which exposes `Handler buildHandler(Session db, AiService aiService)` (router + logging + CORS pipeline). `bin/server.dart` keeps only `main()`: read env, open the pool, serve.
 2. One throwaway database per test via `TestDatabases`: `setUp` creates it, opens the pool with `openExpenseDatabase(baseConfig.withDatabase(name))` and serves `buildHandler(...)` with `shelf_io.serve` on `InternetAddress.loopbackIPv4`, port 0. `tearDown` closes the server, then the pool, then drops the database.
-3. Exactly one subprocess smoke test stays: it starts `bin/server.dart` with `PORT=0` and its own database and checks that the server comes up and `GET /expenses` returns 200 (env config + migrations at startup). The rest of the process plumbing is removed from the CRUD tests.
+3. Exactly one subprocess smoke test stays, in its own file `test/server_startup_test.dart` (so the in-process `setUp` doesn't run for it): it starts `bin/server.dart` with `PORT=0` and its own database and checks that the server comes up and `GET /expenses` returns 200 (env config + migrations at startup). The rest of the process plumbing is removed from the CRUD tests.
 4. The tests stay real HTTP tests through `package:http`, so routing and the CORS middleware are exercised end to end.
 5. The in-process `AiService` points at a non-existent secrets path, so no test can reach the real model.
 6. No existing test case or assertion changes; the 22 server tests stay, the smoke test is added on top.

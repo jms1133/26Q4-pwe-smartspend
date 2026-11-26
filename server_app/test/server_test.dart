@@ -1,65 +1,53 @@
-import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:http/http.dart';
+import 'package:postgres/postgres.dart';
+import 'package:server_app/db/database.dart';
+import 'package:server_app/server.dart';
+import 'package:server_app/services/ai_service.dart';
+import 'package:shelf/shelf_io.dart' as shelf_io;
 import 'package:test/test.dart';
 
 import 'support/test_database.dart';
 
 void main() {
-  late Process p;
+  late HttpServer server;
+  late Pool pool;
   late String host;
   late String testDatabase;
 
   final databases = TestDatabases();
 
   setUp(() async {
-    // Each test gets its own throwaway PostgreSQL database, replacing the
-    // old SQLite ':memory:'. The server applies the migrations to it on
-    // startup, so every test also exercises the migration runner.
+    // Each test gets its own throwaway PostgreSQL database. Opening the pool
+    // applies the migrations to it, like the real server does on startup.
     testDatabase = await databases.create();
+    pool = await openExpenseDatabase(
+        databases.baseConfig.withDatabase(testDatabase));
 
-    // PORT=0 lets the OS pick a free port, so parallel test runs never
-    // collide on a fixed 8082. The server prints the port it actually bound
-    // to; we parse it from that startup line below. POSTGRES_DB overrides
-    // the database from .env; everything else (host, port, credentials) is
-    // inherited.
-    p = await Process.start(
-      'dart',
-      ['run', 'bin/server.dart'],
-      environment: {'PORT': '0', 'POSTGRES_DB': testDatabase},
+    // The server runs inside the test process (not as a `dart run`
+    // subprocess), so coverage sees the handler code. shelf_io.serve returns
+    // once the socket is bound: no startup line to wait for. Port 0 lets the
+    // OS pick a free port, so parallel runs never collide.
+    //
+    // The secrets path doesn't exist, so the AI service has no key unless
+    // OPENAI_API_KEY is set in the environment (it isn't locally or in CI).
+    // No test here calls /classify or /chat.
+    final aiService = AiService(secretsPath: 'test/no-secrets.json');
+    server = await shelf_io.serve(
+      buildHandler(pool, aiService),
+      InternetAddress.loopbackIPv4,
+      0,
     );
-
-    // Keep draining stdout with listen() (not just .first) so the child's
-    // output buffer can't fill up and block the server. Parse only the PORT
-    // from the "Server running on http://host:port" line, then build our own
-    // URL. We connect to 127.0.0.1 (not localhost): on macOS localhost can
-    // resolve to ::1 first, but the server binds IPv4 only (anyIPv4).
-    final boundPort = Completer<String>();
-    p.stdout
-        .transform(utf8.decoder)
-        .transform(const LineSplitter())
-        .listen((line) {
-      final match =
-          RegExp(r'Server running on http://\S+:(\d+)').firstMatch(line);
-      if (match != null && !boundPort.isCompleted) {
-        boundPort.complete(match.group(1));
-      }
-    });
-    p.stderr.transform(utf8.decoder).listen(stderr.write);
-
-    final port = await boundPort.future.timeout(
-      const Duration(seconds: 30),
-      onTimeout: () =>
-          throw StateError('Server did not report a bound port within 30s'),
-    );
-    host = 'http://127.0.0.1:$port';
+    host = 'http://127.0.0.1:${server.port}';
   });
 
   tearDown(() async {
-    p.kill();
-    await p.exitCode;
+    // Order matters: stop accepting requests, release the pool's
+    // connections, then drop the database they pointed at.
+    await server.close(force: true);
+    await pool.close();
     await databases.drop(testDatabase);
   });
 

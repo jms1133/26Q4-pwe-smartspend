@@ -632,3 +632,24 @@ Phase 0 runs as one sequential session. One subsection per step, each using the 
 - **Problems and corrections:** `.claude/current_state.md` said the branch was not pushed; it was pushed with PR #12 open. A first local `dart test` run failed with `ProcessException: dart run bin/server.dart` because the agent's shell had lost `PATH` (`server_test.dart` spawns `dart`); rerun with the SDK on `PATH` passed. Not a code issue.
 - **Verification:** `actionlint` (Docker image `rhysd/actionlint`): no findings. `dart pub get --enforce-lockfile` and `flutter pub get --enforce-lockfile` succeed. `dart analyze lib test bin` and `flutter analyze` clean. `dart test` 51/51, `flutter test` 18/18. **Not verified yet:** CI run and the PR #12 issue count after the push.
 - **Open questions:** Remaining documentation warnings (`docs/*.md` invalid UTF-8 at single lines) not investigated.
+
+### Step 6 – In-process server tests (phase0/inprocess-tests, 2026-11-26)
+- **Goal:** Real coverage for the server handlers in SonarQube Cloud. Before this step they had 0 %: `server_test.dart` ran `dart run bin/server.dart` as a subprocess, and coverage only measures code running in the test VM.
+- **Key prompts:** "prepare for next steps"; approval with two changes: "keep exactly one subprocess smoke test that starts bin/server.dart with PORT=0 and checks that the server comes up and /expenses returns 200" and "report coverage per handler file and for lib/server.dart, before and after."
+- **AI output:**
+  - New `server_app/lib/server.dart`: `buildHandler(Session, AiService)` (pipeline `logRequests` → `handleCors` → router), `handleCors`, `buildRouter`, root/echo/chat handlers, moved from `bin/server.dart`. The duplicated CORS header map became one `_corsHeaders` constant; the two identical `catch` blocks in `_chatHandler` became one.
+  - `server_app/bin/server.dart` keeps only `main()`: open the pool from `DbConfig.fromEnvironment()`, `buildHandler`, serve on `PORT` (default 8082).
+  - `server_app/test/server_test.dart`: `setUp` creates a throwaway database, opens the pool with `openExpenseDatabase(databases.baseConfig.withDatabase(name))` and serves `buildHandler` via `shelf_io.serve` on `127.0.0.1`, port 0. `tearDown` closes the server, then the pool, then drops the database. `AiService(secretsPath: 'test/no-secrets.json')`. Test cases and assertions unchanged (22).
+  - New `server_app/test/server_startup_test.dart`: the single subprocess smoke test (`PORT=0`, own database, waits for the "Server running" line, `GET /expenses` → 200 and `[]`).
+- **Alternatives considered:**
+  - Smoke test as a group in `server_test.dart`: rejected after writing it, because the file's top-level `setUp` would also start an in-process server and pool for that test. Moved to its own file; recorded in the Step 6 brief.
+  - Calling `handler(Request(...))` directly without a socket: rejected, real HTTP keeps the middleware and routing under test the same way as before.
+- **Problems and corrections:** The first baseline run in the agent's shell failed with `command not found: rm`, because `PATH` had been overwritten. Reran with system paths added. Not a code issue.
+- **Verification:**
+  - `dart analyze lib test bin`: no issues. `dart test --coverage-path=coverage/lcov.info`: 52/52 (51 before + smoke test), runtime 1:10 → 0:08.
+  - Line coverage from `coverage/lcov.info`, before → after: `lib/handlers/expense_handlers.dart` 0 % (not loaded) → 63.6 % (75/118); `lib/handlers/category_handlers.dart` 0 % → 90.0 % (27/30); `lib/server.dart` did not exist (code in `bin/server.dart`, not loaded) → 70.7 % (29/41); `lib/db/database.dart` not loaded → 87.5 % (7/8). Unchanged: `db_config.dart` 100 %, `migrations.dart` 100 %; `ai_service.dart` 32.2 % → 34.4 %.
+  - `dart run bin/server.dart`: "Server running on http://0.0.0.0:8082"; `curl /expenses` → 200; `OPTIONS /expenses` → 200 with the CORS headers.
+  - After `dart test test/server_startup_test.dart` no `bin/server.dart` process is left running.
+- **Open questions:**
+  - Uncovered lines are mainly `classifyHandler` (`/classify`) and `_chatHandler`, which need a fake `HttpClient` for `AiService`. Out of scope for this step.
+  - 48 `smart_spend_test_*` databases from runs at 10:30–10:31 (before this step) are still in the local Compose `db`. None were left by runs of the new tests. Not deleted.
