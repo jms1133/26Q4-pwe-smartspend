@@ -138,20 +138,22 @@ per step (Steps 1–5 written).
 
 ## Branch State
 
-- `main` — all of Phase 0 (PR #9–#12, #15) + Step 6 (PR #16, merge commit
-  `715d9e0`), protected. All earlier feature/phase branches deleted locally
-  and on the remote.
-- Tag `pre-login` on `main` (Julian): demo fallback before login lands.
-  Not present yet when `feature/login-backend` was branched.
-- `feature/login-backend` — from `main` (`715d9e0`), Step 7 (login backend).
-  CODE DONE, committed locally, NOT pushed: `e73c94d` brief, `48d7c04`
-  api.yaml, `1aded5a` migration 002 + auth + scoping + tests, `6f45cbc`
-  `.env.example`/`ci.yml` `JWT_SECRET`, plus the docs commit. Julian: tag
-  `pre-login` on `main`, regenerate `openapi/`, `flutter analyze` + `flutter
-  test`, push, open the PR, check CI. The regenerated client goes in its own
-  commit on this branch. Don't merge before `feature/login-ui` is ready.
-  `feature/login-ui` branches from it; both PRs merge back to back, so `main`
-  never has an app that gets 401 everywhere.
+- `main` — all of Phase 0 (PR #9–#12, #15) + Step 6 (PR #16, `715d9e0`) +
+  Step 7 login backend (PR #17, merge commit `c1a4488`), protected.
+- **`main` requires login since `c1a4488`.** Every route except `OPTIONS`
+  preflights, `/` and `/auth/*` returns 401 without a token, and the
+  Flutter app on `main` sends none, so it gets 401 everywhere until Step 8
+  merges. This deviates from decision C in `docs/development-plan.md` Step 7
+  (back-to-back merge of backend and UI PRs). Demo fallback: tag
+  `pre-login`. Not created yet (no tags local or remote); the last
+  pre-login commit on `main` is `715d9e0` (Julian:
+  `git tag pre-login 715d9e0 && git push origin pre-login`).
+- `feature/login-backend` — MERGED (PR #17), deleted on the remote; local
+  branch can be deleted (`git branch -d feature/login-backend`).
+- Step 8 `feature/login-ui` branches from `main` (at or after `c1a4488`),
+  NOT from `feature/login-backend`.
+- `chore/state-after-login-backend` — from `main` (`c1a4488`): this file's
+  update after PR #17. Julian pushes, opens the PR and merges after green CI.
 - Step 7 summary: `migrations/002_users.sql` (deletes dev expenses/categories,
   `users`, per-user categories, composite FK `expenses_user_category_fkey`),
   `lib/auth/` (AuthConfig, PasswordHasher in `Isolate.run`, TokenService
@@ -159,7 +161,12 @@ per step (Steps 1–5 written).
   filtered by `user_id`, `/echo` removed. 111/111 tests. AI log Entry 11,
   `documentation.md` §3.5. Julian's local `.env` got a random `JWT_SECRET`;
   the local dev DB `smart_spend` is still at schema 1, the next server start
-  applies 002 and wipes its expenses/categories (decision B).
+  applies 002 and wipes its expenses/categories (decision B); register a
+  user again afterwards (no seed script yet).
+- PR #17 quality gate: first failed (2 BLOCKER `DELETE` without `WHERE` in
+  002, new coverage 30.7 % because `test/` counted as main code), fixed in
+  `aa16176` (`TRUNCATE`, `sonar.coverage.exclusions=**/test/**`); gate
+  passed with new coverage 93.3 %. Migrations are frozen once merged.
 - Dependabot PRs #13 and #14: closed.
 
 ## Resume Here — Phase 0 open points
@@ -168,8 +175,8 @@ per step (Steps 1–5 written).
    `lib/server.dart` `buildHandler()`, tests serve it in-process, one
    subprocess smoke test in `test/server_startup_test.dart`. 52/52; coverage
    expense_handlers 63.6 %, category_handlers 90 %, lib/server.dart 70.7 %.
-   Follow-up: `/classify` + `/chat` tests with a fake `HttpClient`. Local
-   Compose `db` holds 48 stale `smart_spend_test_*` DBs from 10:30 runs.
+   Follow-up: `/classify` + `/chat` tests with a fake `HttpClient`. The 48
+   stale `smart_spend_test_*` DBs were dropped (0 left).
 2. **`docs/readme` step:** rewrite `README.md` (currently a copy of
    `CLAUDE.md`) as a real project README.
 3. **Encoding fix:** SonarQube reports invalid UTF-8 in `docs/documentation.md`
@@ -196,9 +203,10 @@ Open for Phase 4: CORS still sends `Access-Control-Allow-Origin: *`
 (`server_app/lib/server.dart:43`, asserted in `test/auth_test.dart:255/262`).
 The development plan requires CORS restricted to the web app's origin.
 
-Login system backend (Step 7): code done on `feature/login-backend`, see
-Branch State. Next: Login UI (Flutter: login/register screens, token in a
+Login system backend (Step 7): MERGED (PR #17). Next: Step 8 Login UI on
+`feature/login-ui` from `main` (Flutter: login/register screens, token in a
 provider, `Authorization` header on the generated client, handle 401/429).
+Urgent: the app on `main` is unusable until Step 8 merges (see Branch State).
 
 Optional subcategory follow-ups if revisited later: analytics drill-down by
 subcategory; promote subcategory to its own managed vocabulary only if the
@@ -210,6 +218,8 @@ similarity dedup remains descoped.
 
 ## Verification (last run)
 
+- Step 7 merge (2026-11-26): PR #17 merged as `c1a4488`; all CI checks green,
+  SonarQube Cloud quality gate passed, new coverage 93.3 %.
 - Step 7 (2026-11-26): `dart analyze lib test bin` clean; `dart test` 111/111;
   coverage auth files 93.7–100 %, expense_handlers 64.3 %, category_handlers
   90.9 %, server.dart 72.5 %; `actionlint` clean; curl session (throwaway DB,
@@ -250,10 +260,9 @@ similarity dedup remains descoped.
 Agreed order (2026-11-26, `docs/development-plan.md` "Priority order after
 Phase 0"):
 
-1. **Login system backend** (Step 7, `feature/login-backend`): code done;
-   Julian's steps open (see Branch State).
-2. **Login UI** (`feature/login-ui` from `feature/login-backend`); both PRs
-   merge back to back.
+1. **Login system backend** (Step 7): DONE, MERGED (PR #17, `c1a4488`).
+2. **Login UI** (Step 8, `feature/login-ui` from `main`). Urgent: `main`
+   returns 401 to the app until this merges.
 3. **Seed script** (demo data for the presentation on 1 December).
 4. **`docs/documentation.md`** (German, 30% of grade): still has TODOs for the
    architecture diagram, screenshots and Fazit; add the Docker/PostgreSQL
