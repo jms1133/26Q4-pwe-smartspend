@@ -2,53 +2,92 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:openapi/api.dart';
 
+import 'app_services.dart';
+import 'providers/auth_provider.dart';
 import 'providers/expense_provider.dart';
 import 'screens/analytics_screen.dart';
+import 'screens/auth_gate.dart';
+import 'services/api_errors.dart';
+import 'services/token_store.dart';
+
+const _serverUrl = 'http://localhost:8082';
 
 void main() {
-  // Erzeugt ein Objekt vom Typ ApiClient mit der URL des lokalen Servers
-  final apiClient = ApiClient(basePath: 'http://localhost:8082');
-
-  runApp(
-    MultiProvider(
-      providers: [
-        Provider<ApiClient>.value(value: apiClient),
-        ChangeNotifierProvider<ExpenseProvider>(
-          create: (_) => ExpenseProvider(DefaultApi(apiClient))
-            ..loadExpenses()
-            ..loadCategories(),
-        ),
-      ],
-      child: const SmartSpendApp(),
-    ),
+  final services = AppServices.create(
+    basePath: _serverUrl,
+    store: SharedPreferencesTokenStore(),
   );
+  services.auth.restore();
+  runApp(SmartSpendApp(services: services));
 }
 
 class SmartSpendApp extends StatelessWidget {
-  const SmartSpendApp({super.key});
+  const SmartSpendApp({super.key, required this.services});
+
+  final AppServices services;
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Smart Spend',
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal),
-        useMaterial3: true,
+    // `.value` because the objects are created in main(), not by the
+    // provider; the provider then also doesn't dispose them.
+    return MultiProvider(
+      providers: [
+        Provider<ApiClient>.value(value: services.apiClient),
+        ChangeNotifierProvider<AuthProvider>.value(value: services.auth),
+        ChangeNotifierProvider<ExpenseProvider>.value(
+          value: services.expenses,
+        ),
+      ],
+      child: MaterialApp(
+        navigatorKey: services.navigatorKey,
+        title: 'Smart Spend',
+        theme: ThemeData(
+          colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal),
+          useMaterial3: true,
+        ),
+        home: AuthGate(signedIn: (_) => const DashboardScreen()),
       ),
-      home: const DashboardScreen(),
     );
   }
 }
 
-class DashboardScreen extends StatelessWidget {
+/// Stateful only for [initState]: the first load runs once when the
+/// dashboard is inserted into the tree, i.e. right after login or after a
+/// restored session, when a token exists.
+class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
 
   @override
+  State<DashboardScreen> createState() => _DashboardScreenState();
+}
+
+class _DashboardScreenState extends State<DashboardScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // initState runs during the build phase, where notifyListeners() is not
+    // allowed; the microtask starts the load right after this frame.
+    final provider = context.read<ExpenseProvider>();
+    Future.microtask(() {
+      provider.loadExpenses();
+      provider.loadCategories();
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final username = context.select<AuthProvider, String?>((a) => a.username);
     return Scaffold(
       appBar: AppBar(
         title: const Text('Smart Spend'),
         actions: [
+          if (username != null)
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Text(username, key: const Key('appbar-username')),
+              ),
+            ),
           IconButton(
             tooltip: 'Analytics',
             icon: const Icon(Icons.insights),
@@ -63,6 +102,12 @@ class DashboardScreen extends StatelessWidget {
             icon: const Icon(Icons.refresh),
             onPressed: () =>
                 context.read<ExpenseProvider>().loadExpenses(),
+          ),
+          IconButton(
+            key: const Key('logout-button'),
+            tooltip: 'Log out',
+            icon: const Icon(Icons.logout),
+            onPressed: () => context.read<AuthProvider>().logout(),
           ),
         ],
       ),
@@ -390,8 +435,13 @@ class _ExpenseFormScreenState extends State<ExpenseFormScreen> {
       );
     } catch (e) {
       if (!mounted) return;
+      if (isUnauthorized(e)) {
+        // Ends the session; onSessionEnded closes this form.
+        context.read<AuthProvider>().logout(sessionExpired: true);
+        return;
+      }
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('AI parsing failed: $e')),
+        SnackBar(content: Text(describeApiError(e, 'AI parsing failed'))),
       );
     } finally {
       if (mounted) setState(() => _classifying = false);
@@ -419,6 +469,8 @@ class _ExpenseFormScreenState extends State<ExpenseFormScreen> {
         : await provider.addExpense(input);
 
     if (!mounted) return;
+    // A 401 already ended the session and closed this form.
+    if (!context.read<AuthProvider>().isAuthenticated) return;
 
     if (success) {
       Navigator.of(context).pop();
