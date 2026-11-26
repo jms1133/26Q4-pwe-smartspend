@@ -151,7 +151,7 @@ per step (Steps 1–5 written).
   `users`, per-user categories, composite FK `expenses_user_category_fkey`),
   `lib/auth/` (AuthConfig, PasswordHasher in `Isolate.run`, TokenService
   HS256-only, RateLimiter, middleware, register/login handlers), all queries
-  filtered by `user_id`, `/echo` removed. 108/108 tests. AI log Entry 11,
+  filtered by `user_id`, `/echo` removed. 111/111 tests. AI log Entry 11,
   `documentation.md` §3.5. Julian's local `.env` got a random `JWT_SECRET`;
   the local dev DB `smart_spend` is still at schema 1, the next server start
   applies 002 and wipes its expenses/categories (decision B).
@@ -187,6 +187,10 @@ per step (Steps 1–5 written).
 Still open: the shelf server is not in Compose (needs `DB_HOST=db` and
 `migrations/` copied into the image).
 
+Open for Phase 4: CORS still sends `Access-Control-Allow-Origin: *`
+(`server_app/lib/server.dart:43`, asserted in `test/auth_test.dart:255/262`).
+The development plan requires CORS restricted to the web app's origin.
+
 Login system backend (Step 7): code done on `feature/login-backend`, see
 Branch State. Next: Login UI (Flutter: login/register screens, token in a
 provider, `Authorization` header on the generated client, handle 401/429).
@@ -201,7 +205,7 @@ similarity dedup remains descoped.
 
 ## Verification (last run)
 
-- Step 7 (2026-11-26): `dart analyze lib test bin` clean; `dart test` 108/108;
+- Step 7 (2026-11-26): `dart analyze lib test bin` clean; `dart test` 111/111;
   coverage auth files 93.7–100 %, expense_handlers 64.3 %, category_handlers
   90.9 %, server.dart 72.5 %; `actionlint` clean; curl session (throwaway DB,
   port 8090): register 201, login 200, GET with token 200, without 401 +
