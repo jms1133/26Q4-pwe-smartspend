@@ -97,10 +97,16 @@ per step (Steps 1–5 written).
   via `ON CONFLICT … DO UPDATE … RETURNING`. Tests: fresh random
   `smart_spend_test_*` DB per server test, dropped afterwards. 51/51 green.
   Details in `docs/ai_logs.md` Entry 10, Step 3.
-- **Steps 4 + 5 — SonarQube Cloud + GitHub Actions** — DONE locally on
-  `phase0/sonarqube`, one PR, separate commits. Waiting for Julian: push, green
-  Actions run, SonarQube Cloud dashboard shows `.dart` files with issues and
-  coverage.
+- **Steps 4 + 5 — SonarQube Cloud + GitHub Actions** — pushed on
+  `phase0/sonarqube`, **PR #12 open**, first CI run green, scan
+  `ANALYSIS SUCCESSFUL`. The first scan raised 8 MAJOR issues in `ci.yml`
+  (S7637 actions not pinned to SHA, S8550 `pub get` without lockfile). Fixed
+  locally, not committed yet: all actions pinned to full SHAs (tag as comment),
+  `server_app/pubspec.lock` now tracked, `--enforce-lockfile` on every
+  `pub get`, `.github/dependabot.yml` (actions + pub, weekly),
+  `sonar-project.properties` without `sonar.sources`/`sonar.tests`, binaries
+  and `tools/**` excluded. Log: `docs/ai_logs.md` Entry 10, "Steps 4 + 5
+  follow-up".
   - Local SonarQube Community Build was tried and REMOVED: it has no Dart
     analyzer (no plugin in the image, no `dart` language, scan "0 languages
     detected"). Dart is Developer Edition+ / SonarQube Cloud only.
@@ -118,14 +124,15 @@ per step (Steps 1–5 written).
 
 - `main` — everything above, including Phase 0 Steps 1–3 (PR #9, #10, #11).
 - `phase0/sonarqube` — Steps 4 + 5, branched from `main` (`bf73c64`); carries
-  the cherry-picked "updated plan, logs" commit (step brief template). Not
-  pushed yet; Julian pushes and opens the PR.
+  the cherry-picked "updated plan, logs" commit (step brief template). Pushed,
+  PR #12 open. Uncommitted: the SonarQube findings fix (see above).
 - All earlier Phase 0 branches deleted locally and on the remote.
 
 ## Resume Here
 
-1. Check the CI run and the SonarQube Cloud dashboard for `phase0/sonarqube`
-   (done items 4 and 5 of the Steps 4 + 5 brief); fix if red, then merge.
+1. Commit + push the SonarQube findings fix, then check CI and the PR #12
+   issues (`curl -s "https://sonarcloud.io/api/issues/search?componentKeys=jms1133_26Q4-pwe-smartspend&pullRequest=12"`,
+   expect 0 S7637/S8550). Done items 4, 5, 8 of the brief; then merge.
 2. **Next step: in-process server tests.** Server handlers show 0 % coverage
    because `server_test.dart` runs the server as a subprocess. Move the tests
    in-process: create the pool in the test, serve `buildRouter()` on port 0.
@@ -134,7 +141,7 @@ per step (Steps 1–5 written).
 
 Still open: the shelf server is not in Compose (needs `DB_HOST=db` and
 `migrations/` copied into the image); branch protection and Dependabot not
-configured.
+configured. Dependabot config added in the findings fix.
 
 After Phase 0: **Login system** (`docs/development-plan.md` feature 2): `users`
 table, password hashing, register/login endpoints, JWT, auth middleware,
@@ -150,6 +157,9 @@ similarity dedup remains descoped.
 
 ## Verification (last run)
 
+- Steps 4 + 5 findings fix: `actionlint` (Docker `rhysd/actionlint`) clean;
+  `pub get --enforce-lockfile` OK in both apps; both analyzers clean;
+  `dart test` 51/51, `flutter test` 18/18. CI after the fix: not yet run.
 - Phase 0 Steps 4 + 5: `docker compose config --services` → `db` only;
   `dart analyze lib test bin` clean, `dart test --coverage-path=…` 51/51;
   `flutter analyze` clean, `flutter test --coverage` 18/18; `actionlint` clean.

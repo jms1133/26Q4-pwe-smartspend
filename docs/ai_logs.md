@@ -616,3 +616,19 @@ Phase 0 runs as one sequential session. One subsection per step, each using the 
 - **Open questions:**
   - Branch protection (required checks) and Dependabot are not configured yet.
   - README rewrite as a separate `docs/readme` step (README is currently a copy of `CLAUDE.md`).
+
+### Steps 4 + 5 follow-up – First SonarQube Cloud findings in `ci.yml` (phase0/sonarqube, PR #12, 2026-11-26)
+- **Goal:** Fix the findings of the first SonarQube Cloud scan that Julian described as "SHA errors".
+- **Key prompts:** "last session we ran the sonarQube and got SHA errors"; after the proposal: "yes all of it."
+- **Finding:** The CI runs for PR #12 (push and pull_request) were green and the scan ended with `ANALYSIS SUCCESSFUL`. The "SHA errors" were 8 MAJOR issues in `.github/workflows/ci.yml` (read via `api/issues/search?pullRequest=12`):
+  - `githubactions:S7637` "Use full commit SHA hash for this dependency" (lines 46, 68, 96, 122): third-party actions `subosito/flutter-action@v2` and `SonarSource/sonarqube-scan-action@v8` were referenced by mutable tags. `actions/*` were not flagged.
+  - `githubactions:S8550` "Using dependencies without locking resolved versions" (lines 51, 73, 105, 106): `dart pub get` / `flutter pub get` without lockfile enforcement. `server_app/pubspec.lock` was git-ignored, so the backend had no lockfile in the repo (CI resolved `_fe_analyzer_shared` 111.0.0, the local lockfile has 109.0.0).
+- **AI output:**
+  - `ci.yml`: all actions pinned to full commit SHAs with the tag as a comment, SHAs resolved via `gh api repos/<repo>/commits/<tag>`: checkout `3d3c42e…` v7.0.1, upload-artifact `cf430e0…` v7.0.2, download-artifact `9000827…` v8.0.2, flutter-action `1a44944…` v2.23.0, sonarqube-scan-action `70bad23…` v8.5.1. All four `pub get` calls use `--enforce-lockfile`.
+  - `server_app/.gitignore`: `pubspec.lock` entry removed; `server_app/pubspec.lock` committed.
+  - `.github/dependabot.yml`: weekly updates for `github-actions` and `pub` (`/server_app`, `/flutter_application`).
+  - `sonar-project.properties`: `sonar.sources`/`sonar.tests` removed (scan warning: "configured but have no effect" under the new analysis scope); `sonar.test.inclusions` for both `test/` folders; `sonar.exclusions` extended with `tools/**` (20 MB generator jar) and `*.png`, `*.jpg`, `*.ico`, `*.jar` (UTF-8 encoding warnings on icons).
+- **Alternatives considered:** Pinning only the two flagged third-party actions: rejected for consistency. Pinning without Dependabot: rejected, pinned SHAs would never get updates.
+- **Problems and corrections:** `.claude/current_state.md` said the branch was not pushed; it was pushed with PR #12 open. A first local `dart test` run failed with `ProcessException: dart run bin/server.dart` because the agent's shell had lost `PATH` (`server_test.dart` spawns `dart`); rerun with the SDK on `PATH` passed. Not a code issue.
+- **Verification:** `actionlint` (Docker image `rhysd/actionlint`): no findings. `dart pub get --enforce-lockfile` and `flutter pub get --enforce-lockfile` succeed. `dart analyze lib test bin` and `flutter analyze` clean. `dart test` 51/51, `flutter test` 18/18. **Not verified yet:** CI run and the PR #12 issue count after the push.
+- **Open questions:** Remaining documentation warnings (`docs/*.md` invalid UTF-8 at single lines) not investigated.

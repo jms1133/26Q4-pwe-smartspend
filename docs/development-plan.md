@@ -135,7 +135,11 @@ Agreed decisions:
 7. Revised: no local token. The token is a personal SonarQube Cloud token stored as the repository secret `SONAR_TOKEN`.
 8. Workflow `.github/workflows/ci.yml` on `push` and `pull_request`. Jobs: `backend` (Postgres 16 service container with `pg_isready` healthcheck, test credentials set in the workflow, not from secrets; `dart analyze lib test bin`, `dart test` with coverage), `frontend` (`flutter analyze`, `flutter test --coverage`), `sonar` (needs both, downloads their lcov artifacts, runs the scan with `SONAR_TOKEN`). Flutter version pinned to the local one (3.47.7), which also provides the Dart SDK for the backend.
 9. The scan is skipped when `SONAR_TOKEN` is unavailable (pull requests from forks get no secrets), so those runs still show analyze/test results.
-Out of scope: fixing findings (Phase 4), stricter lint sets, shelf server in Compose, Dependabot, branch protection.
+10. Follow-up after the first scan (8 MAJOR issues in `ci.yml`, rules `githubactions:S7637` and `githubactions:S8550`): every action is pinned to a full commit SHA with the release tag as a comment (`checkout` v7.0.1, `upload-artifact` v7.0.2, `download-artifact` v8.0.2, `flutter-action` v2.23.0, `sonarqube-scan-action` v8.5.1).
+11. `server_app/pubspec.lock` is committed (removed from `server_app/.gitignore`); both apps are applications, so their lockfiles belong in Git. All `pub get` calls in CI use `--enforce-lockfile`.
+12. Dependabot (`.github/dependabot.yml`), weekly: `github-actions` (keeps the pinned SHAs current) and `pub` for `server_app` and `flutter_application`.
+13. `sonar-project.properties`: `sonar.sources`/`sonar.tests` removed (no effect under SonarQube Cloud's new analysis scope); scope controlled via `sonar.exclusions` (also `tools/**` and binary images) and `sonar.test.inclusions`.
+Out of scope: fixing findings outside `ci.yml` (Phase 4), stricter lint sets, shelf server in Compose, branch protection.
 Open points (next steps): server handlers show 0 % coverage because `server_test.dart` runs the server as a subprocess; next step moves the server tests in-process (pool created in the test, `buildRouter()` served on port 0). README rewrite as a separate `docs/readme` step.
 Done:
 1. `dart analyze` and `flutter analyze` clean locally, `dart test` and `flutter test` green locally (show output).
@@ -144,6 +148,8 @@ Done:
 4. (Julian) branch pushed: the Actions run is green, including the scan step.
 5. (Julian) SonarQube Cloud dashboard shows `.dart` files with issues and coverage.
 6. Brief, AI log (Entry 10, Steps 4 and 5) and `current_state.md` updated.
+7. `actionlint` clean; `dart pub get --enforce-lockfile` and `flutter pub get --enforce-lockfile` succeed locally.
+8. SonarQube Cloud PR #12 shows 0 issues for S7637/S8550 (checked via the issues API).
 
 **Phase 1 – parallel:**
 

@@ -42,16 +42,16 @@ jobs:
       run:
         working-directory: server_app
     steps:
-      - uses: actions/checkout@v7
-      - uses: subosito/flutter-action@v2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
           channel: stable
           flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
-      - run: dart pub get
+      - run: dart pub get --enforce-lockfile
       - run: dart analyze lib test bin
       - run: dart test --coverage-path=coverage/lcov.info
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: coverage-backend
           path: server_app/coverage/lcov.info
@@ -64,16 +64,16 @@ jobs:
       run:
         working-directory: flutter_application
     steps:
-      - uses: actions/checkout@v7
-      - uses: subosito/flutter-action@v2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
           channel: stable
           flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
-      - run: flutter pub get
+      - run: flutter pub get --enforce-lockfile
       - run: flutter analyze
       - run: flutter test --coverage
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: coverage-frontend
           path: flutter_application/coverage/lcov.info
@@ -89,11 +89,11 @@ jobs:
       - name: Skip notice
         if: env.SONAR_TOKEN == ''
         run: echo "SONAR_TOKEN is not available (e.g. pull request from a fork); skipping the scan."
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: env.SONAR_TOKEN != ''
         with:
           fetch-depth: 0
-      - uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         if: env.SONAR_TOKEN != ''
         with:
           channel: stable
@@ -102,14 +102,14 @@ jobs:
       - name: Resolve dependencies for the Dart analyzer
         if: env.SONAR_TOKEN != ''
         run: |
-          (cd server_app && dart pub get)
-          (cd flutter_application && flutter pub get)
-      - uses: actions/download-artifact@v8
+          (cd server_app && dart pub get --enforce-lockfile)
+          (cd flutter_application && flutter pub get --enforce-lockfile)
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         if: env.SONAR_TOKEN != ''
         with:
           name: coverage-backend
           path: server_app/coverage
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         if: env.SONAR_TOKEN != ''
         with:
           name: coverage-frontend
@@ -119,5 +119,5 @@ jobs:
         run: |
           sed -i "s|^SF:lib/|SF:${GITHUB_WORKSPACE}/flutter_application/lib/|" flutter_application/coverage/lcov.info
           grep '^SF:' server_app/coverage/lcov.info flutter_application/coverage/lcov.info
-      - uses: SonarSource/sonarqube-scan-action@v8
+      - uses: SonarSource/sonarqube-scan-action@70bad232163b09d998ea0707ee80c0ec80798c16 # v8.5.1
         if: env.SONAR_TOKEN != ''
