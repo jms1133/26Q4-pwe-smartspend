@@ -133,18 +133,19 @@ per step (Steps 1–5 written).
 
 ## Branch State
 
-- `main` — all of Phase 0 (PR #9–#12) + PR #15 (`chore/state-cleanup`),
-  HEAD `8f24bc6`, protected. Remote branch `origin/chore/state-cleanup` still
-  exists (merged; can be deleted).
-- `phase0/inprocess-tests` — from `main`, Step 6 (in-process server tests).
-  Commits: brief + priority order, code + AI log, this state update. NOT
-  pushed. Julian pushes, opens the PR, checks CI + SonarQube handler coverage,
-  merges.
+- `main` — all of Phase 0 (PR #9–#12, #15) + Step 6 (PR #16, merge commit
+  `715d9e0`), protected. All earlier feature/phase branches deleted locally
+  and on the remote.
+- Tag `pre-login` on `main` (Julian): demo fallback before login lands.
+  Not present yet when `feature/login-backend` was branched.
+- `feature/login-backend` — from `main` (`715d9e0`), Step 7 (login backend).
+  `feature/login-ui` will branch from it later; both PRs merge back to back,
+  so `main` never has an app that gets 401 everywhere.
 - Dependabot PRs #13 and #14: closed.
 
 ## Resume Here — Phase 0 open points
 
-1. **In-process server tests.** DONE on `phase0/inprocess-tests` (Step 6):
+1. **In-process server tests.** DONE, MERGED (PR #16, Step 6):
    `lib/server.dart` `buildHandler()`, tests serve it in-process, one
    subprocess smoke test in `test/server_startup_test.dart`. 52/52; coverage
    expense_handlers 63.6 %, category_handlers 90 %, lib/server.dart 70.7 %.
@@ -172,9 +173,9 @@ per step (Steps 1–5 written).
 Still open: the shelf server is not in Compose (needs `DB_HOST=db` and
 `migrations/` copied into the image).
 
-After Phase 0: **Login system** (`docs/development-plan.md` feature 2): `users`
-table, password hashing, register/login endpoints, JWT, auth middleware,
-`user_id` FK on `expenses` and categories.
+After Phase 0: **Login system backend** = Step 7 in `docs/development-plan.md`
+(username + bcrypt + HS256 JWT, per-user categories, isolation tests, rate
+limits).
 
 Optional subcategory follow-ups if revisited later: analytics drill-down by
 subcategory; promote subcategory to its own managed vocabulary only if the
@@ -219,15 +220,17 @@ similarity dedup remains descoped.
 Agreed order (2026-11-26, `docs/development-plan.md` "Priority order after
 Phase 0"):
 
-1. Merge `phase0/inprocess-tests`.
-2. **Login system backend** → **Login UI** → **seed script** →
-   documentation/README. In parallel: a docs-only agent for the encoding fix
-   (open point 3) and the README rewrite (open point 2). Future work after
-   that: redesign, Android, sync, budgets, export, Grumpy Uncle, server
-   container.
-3. **`docs/documentation.md`** (German, 30% of grade) — still has TODOs for the
-   architecture diagram, screenshots and Fazit. Add the Docker/PostgreSQL setup
-   once Step 3 lands. Shelf server container is not in Compose yet.
+1. **Login system backend** (Step 7, `feature/login-backend`).
+2. **Login UI** (`feature/login-ui` from `feature/login-backend`); both PRs
+   merge back to back.
+3. **Seed script** (demo data for the presentation on 1 December).
+4. **`docs/documentation.md`** (German, 30% of grade): still has TODOs for the
+   architecture diagram, screenshots and Fazit; add the Docker/PostgreSQL
+   setup (Step 3 is merged) and the auth design. Then README.
+
+In parallel: a docs-only agent for the encoding fix (open point 3) and the
+README rewrite (open point 2). Future work after that: redesign, Android,
+sync, budgets, export, Grumpy Uncle, server container.
 
 ## Docs / Journal Policy
 
