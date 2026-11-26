@@ -3,7 +3,7 @@
 > What a new session needs to resume: branches, current step, next steps,
 > open points, last verification. Imported by `CLAUDE.md` (rule 12).
 > Decisions per step: briefs in `docs/development-plan.md`. What was done and
-> why: `docs/ai_logs.md` (Entries 1–11). Julian's reflections:
+> why: `docs/ai_logs.md` (Entries 1–12). Julian's reflections:
 > `docs/ai_engineering_journal.md` (9 entries, never edited by Claude).
 
 ## Done so far
@@ -13,6 +13,7 @@ analytics, dynamic categories, AI subcategories, KI-Kommentar: AI log
 Entries 1–9. Phase 0 infrastructure (Steps 1–6: test port, Docker Compose +
 PostgreSQL, SQLite → PostgreSQL, SonarQube Cloud + GitHub Actions, in-process
 server tests): Entry 10. Step 7 login backend: Entry 11, merged as PR #17.
+Step 8 login UI: Entry 12, done on `feature/login-ui`, PR not yet opened.
 
 ## Branches
 
@@ -23,16 +24,19 @@ server tests): Entry 10. Step 7 login backend: Entry 11, merged as PR #17.
   `/` and `/auth/*` returns 401, and the app on `main` sends no token, so it
   is unusable until Step 8 merges. Demo fallback: tag `pre-login` on
   `715d9e0` (pushed); see open point 8.
-- `feature/login-ui` from `dc20c59`: Step 8, local only, not pushed.
+- `feature/login-ui` from `dc20c59`: Step 8 complete, 8 commits, local
+  only. Julian pushes and opens the PR.
 
 ## Current step
 
-Step 8 – Login UI on `feature/login-ui`. Brief (approved):
-`docs/development-plan.md`, "Step 8 – Login UI". AI log Entry 12.
+Step 8 – Login UI on `feature/login-ui`. Brief: `docs/development-plan.md`,
+"Step 8 – Login UI". AI log Entry 12. Open: Done items 4 (Chrome end-to-end)
+and 5 (CI + SonarQube gate) for Julian. Risk: new-code coverage on
+`main.dart` is low (29 % for the whole file), see Entry 12 open questions.
 
 ## Next steps (in order, presentation on 1 December)
 
-1. Step 8 Login UI: finish, PR, merge.
+1. Step 8 Login UI: push, PR, Julian's checks, merge.
 2. Seed script with demo data.
 3. `docs/documentation.md` (German): architecture diagram, screenshots,
    Fazit, Docker/PostgreSQL setup, auth design. Then README.
@@ -71,7 +75,8 @@ Future work: `docs/development-plan.md`, "Priority order after Phase 0".
 
 ## Last verification run
 
-Step 7 merge (2026-11-26): PR #17 merged as `c1a4488`, all CI checks green,
-SonarQube Cloud quality gate passed (new coverage 93.3 %). Locally before the
-merge: `dart analyze lib test bin` clean, `dart test` 111/111. Details:
-`docs/ai_logs.md` Entry 11, "Verification".
+Step 8 (2026-11-26, `feature/login-ui`): `flutter analyze` clean,
+`flutter test --coverage` 48/48, `flutter pub get --enforce-lockfile` exit 0
+on the committed lock; `server_app`: `dart analyze lib test bin` clean,
+`dart test` 111/111. Not run: Chrome end-to-end, CI. Details:
+`docs/ai_logs.md` Entry 12, "Verification".
