@@ -653,3 +653,39 @@ Phase 0 runs as one sequential session. One subsection per step, each using the 
 - **Open questions:**
   - Uncovered lines are mainly `classifyHandler` (`/classify`) and `_chatHandler`, which need a fake `HttpClient` for `AiService`. Out of scope for this step.
   - 48 `smart_spend_test_*` databases from runs at 10:30–10:31 (before this step) are still in the local Compose `db`. None were left by runs of the new tests. Not deleted.
+
+---
+
+## Entry 11 – Login system backend (2026-11-26, feature/login-backend)
+- **Goal:** Users register with a username and log in; every expense and category belongs to exactly one user, and no user can read, change or delete another user's data (Step 7 brief in `docs/development-plan.md`).
+- **Key prompts:** Answers to the open questions: "A: username, not email", "B: migration deletes existing expenses and categories, with a comment why", "C: I tag main as pre-login; login-ui branches from this branch", "D: rate limiting stays in this step". Additions: composite FK `(user_id, category_id)`, ON CONFLICT target equal to the index expression, seed copy in the same transaction as the user insert, bcrypt in `Isolate.run` with a dummy hash and a UTF-8 byte check, HS256 only with one test per rejected variant, CORS outside auth with `Authorization` in Allow-Headers, rate limits with reset on success, `Retry-After` and pruning. "Approved but consider one addition: ... list password spraying ... as a known limitation."
+- **AI output:**
+  - `api.yaml` (commit `48d7c04`): `bearerAuth` global, `security: []` on `/` and `/auth/*`, `POST /auth/register` (201 `User`, 400, 409, 429), `POST /auth/login` (200 `AuthToken`, 400, 401, 429), 401 on all protected paths.
+  - `server_app/migrations/002_users.sql`: deletes existing expenses and categories; `users` with unique index `users_username_lower_key` on `lower(username)`; `categories.user_id` + `UNIQUE (user_id, id)` + unique index `(user_id, lower(name))`; `expenses.category` replaced by `category_id`, `user_id`, FK `expenses_user_category_fkey (user_id, category_id) → categories (user_id, id)`, index `(user_id, timestamp DESC, id DESC)`.
+  - `server_app/lib/auth/`: `auth_config.dart` (`JWT_SECRET` ≥ 32 bytes, `BCRYPT_COST` 4–31, env or repo-root `.env`), `password_hasher.dart` (`Isolate.run` around `hashpw`/`checkpw`, dummy hash computed at startup), `token_service.dart` (header pre-check `alg == HS256`, `typ == JWT`, `exp` against injected `now`), `rate_limiter.dart` (sliding window, prune on every check), `auth_services.dart`, `auth_middleware.dart` (public: `OPTIONS`, `/`, `/auth/*`; else 401 + `WWW-Authenticate: Bearer`, user id into `request.context`), `auth_handlers.dart` (register in one `runTx` with `unnest(@names)` seed copy; 409 only for `users_username_lower_key`, other unique violations rethrown).
+  - `server_app/lib/db/default_categories.dart`: the 9 seed names as a Dart constant.
+  - Handlers: every expense/category query filters `user_id` from the token; expenses return the category name via `JOIN`; create/update use `WITH e AS (INSERT/UPDATE … RETURNING *) SELECT … JOIN`; find-or-create uses `ON CONFLICT (user_id, (lower(name)))`; `/classify` lists only the user's categories. `/echo` removed. Pipeline: logging → CORS → auth → router.
+  - Tests: `test/support/test_server.dart` (`TestServer`, `ApiClient`, bcrypt cost 4), `auth_test.dart`, `isolation_test.dart`, `token_service_test.dart`, `rate_limiter_test.dart`, `auth_config_test.dart`; `server_test.dart` uses `alice`'s token; `server_startup_test.dart` sets `JWT_SECRET` and adds a test that the server refuses to start without it.
+  - `.env.example`: empty `JWT_SECRET=` with a generation hint; `ci.yml`: test-only `JWT_SECRET` in the backend job env.
+- **Alternatives considered:**
+  - Email as login: rejected (no verification or reset in scope, would only store personal data).
+  - `package:clock` for expiry: rejected, it works through zones that shelf_io may not pass to handlers; an injected `now` function is used instead.
+  - Relying on `JWT.verify`'s own `exp` check: rejected, it uses the real clock; `checkExpiresIn: false` plus our own check against `now`.
+  - Running bcrypt on the server isolate: rejected, measured 314 ms per hash at cost 12 (15 ms at cost 4), which would block all other requests.
+  - PostgreSQL row-level security: out of scope; the composite FK covers the cross-user category case at DB level.
+- **Problems and corrections:**
+  - Dart has no `catch … when`; replaced with `rethrow` inside the catch.
+  - A `RateLimiterFactory` referenced in `test_server.dart` did not exist; replaced with direct `RateLimiter(...)` construction.
+  - `dart format lib test bin` (SDK 3.13, tall style) reformatted six files outside this step (`db_config.dart`, `migrations.dart`, `ai_service.dart`, `ai_service_test.dart`, `db_config_test.dart`, `test_database.dart`); reverted to keep the diff focused.
+  - The `JWT_SECRET` for Julian's local `.env` was first appended to `server_app/.env` (shell cwd), so `dart run` still refused to start; moved to the repo-root `.env` and the stray file removed.
+  - Leftover unused `package:http` import in `server_startup_test.dart` removed after `dart analyze` flagged it.
+- **Verification:**
+  - `dart analyze lib test bin`: no issues. `dart test`: 108/108 passed (52 before).
+  - Migration 002 dry-run in a scratch DB: legacy rows deleted, ON CONFLICT on `(user_id, (lower(name)))` returns the existing row with `created = false`.
+  - Coverage (`--coverage-path`): `auth_config` 100 %, `auth_handlers` 93.7 %, `auth_middleware` 100 %, `password_hasher` 100 %, `rate_limiter` 100 %, `token_service` 100 %, `category_handlers` 90.9 %, `expense_handlers` 64.3 %, `server.dart` 72.5 %.
+  - `curl` session against a throwaway DB on port 8090: register `alice` 201; login as `Alice` 200 with token and `expiresAt` +1 h; `POST /expenses` with token 201; `GET /expenses` with token 200; without token 401 with `www-authenticate: Bearer` and `access-control-allow-origin: *`; wrong password 401; `OPTIONS /expenses` without token 200 with `access-control-allow-headers: Origin, Content-Type, Authorization`.
+  - `actionlint`: no findings. Staged diff scanned for the local secrets: none.
+- **Open questions:**
+  - The local dev DB `smart_spend` is still at schema version 1; the next server start applies 002 and deletes its expenses and categories (decision B).
+  - Not verified yet: client regeneration, `flutter analyze`/`flutter test` against the new client, CI run (Julian).
+  - Known limitations, documented in `documentation.md` §3.5: 409 reveals existing usernames; password spraying is not stopped by the per-(IP, username) login limit; limits are in-memory per process; no refresh token or server-side logout.

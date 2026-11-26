@@ -139,8 +139,22 @@ per step (Steps 1–5 written).
 - Tag `pre-login` on `main` (Julian): demo fallback before login lands.
   Not present yet when `feature/login-backend` was branched.
 - `feature/login-backend` — from `main` (`715d9e0`), Step 7 (login backend).
-  `feature/login-ui` will branch from it later; both PRs merge back to back,
-  so `main` never has an app that gets 401 everywhere.
+  CODE DONE, committed locally, NOT pushed: `e73c94d` brief, `48d7c04`
+  api.yaml, `1aded5a` migration 002 + auth + scoping + tests, `6f45cbc`
+  `.env.example`/`ci.yml` `JWT_SECRET`, plus the docs commit. Julian: tag
+  `pre-login` on `main`, regenerate `openapi/`, `flutter analyze` + `flutter
+  test`, push, open the PR, check CI. The regenerated client goes in its own
+  commit on this branch. Don't merge before `feature/login-ui` is ready.
+  `feature/login-ui` branches from it; both PRs merge back to back, so `main`
+  never has an app that gets 401 everywhere.
+- Step 7 summary: `migrations/002_users.sql` (deletes dev expenses/categories,
+  `users`, per-user categories, composite FK `expenses_user_category_fkey`),
+  `lib/auth/` (AuthConfig, PasswordHasher in `Isolate.run`, TokenService
+  HS256-only, RateLimiter, middleware, register/login handlers), all queries
+  filtered by `user_id`, `/echo` removed. 108/108 tests. AI log Entry 11,
+  `documentation.md` §3.5. Julian's local `.env` got a random `JWT_SECRET`;
+  the local dev DB `smart_spend` is still at schema 1, the next server start
+  applies 002 and wipes its expenses/categories (decision B).
 - Dependabot PRs #13 and #14: closed.
 
 ## Resume Here — Phase 0 open points
@@ -173,9 +187,9 @@ per step (Steps 1–5 written).
 Still open: the shelf server is not in Compose (needs `DB_HOST=db` and
 `migrations/` copied into the image).
 
-After Phase 0: **Login system backend** = Step 7 in `docs/development-plan.md`
-(username + bcrypt + HS256 JWT, per-user categories, isolation tests, rate
-limits).
+Login system backend (Step 7): code done on `feature/login-backend`, see
+Branch State. Next: Login UI (Flutter: login/register screens, token in a
+provider, `Authorization` header on the generated client, handle 401/429).
 
 Optional subcategory follow-ups if revisited later: analytics drill-down by
 subcategory; promote subcategory to its own managed vocabulary only if the
@@ -186,6 +200,13 @@ only. True synonyms rely on the AI prompt (A) + user review (C). Embedding-
 similarity dedup remains descoped.
 
 ## Verification (last run)
+
+- Step 7 (2026-11-26): `dart analyze lib test bin` clean; `dart test` 108/108;
+  coverage auth files 93.7–100 %, expense_handlers 64.3 %, category_handlers
+  90.9 %, server.dart 72.5 %; `actionlint` clean; curl session (throwaway DB,
+  port 8090): register 201, login 200, GET with token 200, without 401 +
+  `WWW-Authenticate` + CORS, preflight 200 with `Authorization` allowed.
+  Not run: `flutter analyze`/`flutter test` against the regenerated client, CI.
 
 - Step 6 (2026-11-26): `dart analyze lib test bin` clean; `dart test
   --coverage-path=…` 52/52 in 8 s; `dart run bin/server.dart` on 8082,
@@ -220,7 +241,8 @@ similarity dedup remains descoped.
 Agreed order (2026-11-26, `docs/development-plan.md` "Priority order after
 Phase 0"):
 
-1. **Login system backend** (Step 7, `feature/login-backend`).
+1. **Login system backend** (Step 7, `feature/login-backend`): code done;
+   Julian's steps open (see Branch State).
 2. **Login UI** (`feature/login-ui` from `feature/login-backend`); both PRs
    merge back to back.
 3. **Seed script** (demo data for the presentation on 1 December).
@@ -264,6 +286,7 @@ docker compose down          # add -v to also delete the db_data volume
 
 # Backend (from server_app/). DB config comes from env or the repo-root .env
 # (POSTGRES_DB/USER/PASSWORD, DB_HOST default localhost, DB_PORT default 5432);
+# JWT_SECRET (>= 32 bytes) is required, BCRYPT_COST optional (default 12);
 # migrations in migrations/ run on startup:
 dart pub get --enforce-lockfile
 dart analyze lib test bin
