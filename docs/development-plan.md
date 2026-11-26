@@ -151,6 +151,36 @@ Done:
 7. `actionlint` clean; `dart pub get --enforce-lockfile` and `flutter pub get --enforce-lockfile` succeed locally.
 8. SonarQube Cloud PR #12 shows 0 issues for S7637/S8550 (checked via the issues API).
 
+**Step 6 – In-process server tests** · branch `phase0/inprocess-tests` from `main`
+Goal: the server handlers show real coverage in SonarQube Cloud. Coverage only measures code running in the test process, and `server_test.dart` currently runs the server as a subprocess.
+Agreed decisions:
+1. `buildRouter`, `handleCors` and the root/echo/chat handlers move from `bin/server.dart` to `lib/server.dart`, which exposes `Handler buildHandler(Session db, AiService aiService)` (router + logging + CORS pipeline). `bin/server.dart` keeps only `main()`: read env, open the pool, serve.
+2. One throwaway database per test via `TestDatabases`: `setUp` creates it, opens the pool with `openExpenseDatabase(baseConfig.withDatabase(name))` and serves `buildHandler(...)` with `shelf_io.serve` on `InternetAddress.loopbackIPv4`, port 0. `tearDown` closes the server, then the pool, then drops the database.
+3. Exactly one subprocess smoke test stays: it starts `bin/server.dart` with `PORT=0` and its own database and checks that the server comes up and `GET /expenses` returns 200 (env config + migrations at startup). The rest of the process plumbing is removed from the CRUD tests.
+4. The tests stay real HTTP tests through `package:http`, so routing and the CORS middleware are exercised end to end.
+5. The in-process `AiService` points at a non-existent secrets path, so no test can reach the real model.
+6. No existing test case or assertion changes; the 22 server tests stay, the smoke test is added on top.
+Out of scope: new `/classify` and `/chat` tests with a fake `HttpClient`, README, encoding fix, seed script.
+Done:
+1. `dart analyze lib test bin` clean, `dart test` all green (show output).
+2. `dart run bin/server.dart` still starts on 8082; `curl /expenses` returns 200.
+3. Line coverage per handler file and for `lib/server.dart` from `coverage/lcov.info`, before and after.
+4. (Julian) CI on the PR is green; SonarQube Cloud shows handler coverage above 0 %.
+5. Brief in this plan; AI log subsection in `docs/ai_logs.md` Entry 10.
+
+**Priority order after Phase 0 (agreed 2026-11-26, presentation on 1 December):**
+
+1. Login system backend (feature 2). Core Must-have, comes first to keep a buffer.
+2. Login UI (feature 3).
+3. Seed script with demo data for the presentation.
+4. Documentation (`docs/documentation.md`) and README.
+
+In parallel, as a separate docs-only agent: the encoding fix (invalid UTF-8 reported by SonarQube in `docs/documentation.md` and `docs/ai_logs.md`) and the README rewrite.
+
+Future work, after the items above and only if time allows: web interface redesign, configurable server URL and Android build, sync and offline mode, budgets with alerts, CSV/PDF export, Grumpy Uncle personality, shelf server container in Docker Compose.
+
+The phase plan below describes the original parallel split; where it conflicts with this order, this order wins.
+
 **Phase 1 – parallel:**
 
 - Agent A: web interface redesign (Flutter only).
