@@ -133,31 +133,31 @@ per step (Steps 1–5 written).
 
 ## Branch State
 
-- `main` — all of Phase 0 (PR #9, #10, #11, #12), HEAD `f5bb297`, protected.
-- All Phase 0 branches deleted locally and on the remote.
-- `chore/state-cleanup` — from `main`: this file's Phase 0 close-out + stale
-  parts fixed, `sonar.test.inclusions` removed, Dependabot ignores semver-major
-  `pub` updates. Committed locally; Julian pushes, opens the PR and merges after
-  green CI (no bypass).
-- Dependabot PRs #13 (`fl_chart` 0.69.2 → 1.3.1) and #14 (`cupertino_icons`
-  1.0.9 → 2.0.0): both majors, both RED at `flutter pub get
-  --enforce-lockfile` (see open point 7). Julian closes them; the new major
-  ignore rule keeps them from reopening.
+- `main` — all of Phase 0 (PR #9–#12) + PR #15 (`chore/state-cleanup`),
+  HEAD `8f24bc6`, protected. Remote branch `origin/chore/state-cleanup` still
+  exists (merged; can be deleted).
+- `phase0/inprocess-tests` — from `main`, Step 6 (in-process server tests).
+  Commits: brief + priority order, code + AI log, this state update. NOT
+  pushed. Julian pushes, opens the PR, checks CI + SonarQube handler coverage,
+  merges.
+- Dependabot PRs #13 and #14: closed.
 
 ## Resume Here — Phase 0 open points
 
-1. **In-process server tests.** Server handlers show 0 % coverage because
-   `server_test.dart` runs the server as a subprocess. Move the tests
-   in-process: create the pool in the test, serve `buildRouter()` on port 0.
+1. **In-process server tests.** DONE on `phase0/inprocess-tests` (Step 6):
+   `lib/server.dart` `buildHandler()`, tests serve it in-process, one
+   subprocess smoke test in `test/server_startup_test.dart`. 52/52; coverage
+   expense_handlers 63.6 %, category_handlers 90 %, lib/server.dart 70.7 %.
+   Follow-up: `/classify` + `/chat` tests with a fake `HttpClient`. Local
+   Compose `db` holds 48 stale `smart_spend_test_*` DBs from 10:30 runs.
 2. **`docs/readme` step:** rewrite `README.md` (currently a copy of
    `CLAUDE.md`) as a real project README.
 3. **Encoding fix:** SonarQube reports invalid UTF-8 in `docs/documentation.md`
    (line 16) and `docs/ai_logs.md` (line 45). Find and fix the bytes.
 4. **Seed script:** demo data for the fresh PostgreSQL DB (presentation on
    1 December).
-5. Small cleanup: drop `sonar.test.inclusions` (no effect, see above). Done on
-   `chore/state-cleanup`.
-6. Dependabot PRs #13 and #14: Julian closes them.
+5. Small cleanup: drop `sonar.test.inclusions`. DONE (PR #15).
+6. Dependabot PRs #13 and #14: DONE (closed).
 7. **Dependabot `pub` lockfiles don't match Flutter 3.47.7's resolution.**
    Dependabot's updated `pubspec.lock` fails `flutter pub get
    --enforce-lockfile` in CI ("Unable to satisfy `pubspec.yaml` using
@@ -186,6 +186,10 @@ similarity dedup remains descoped.
 
 ## Verification (last run)
 
+- Step 6 (2026-11-26): `dart analyze lib test bin` clean; `dart test
+  --coverage-path=…` 52/52 in 8 s; `dart run bin/server.dart` on 8082,
+  `curl /expenses` 200, `OPTIONS` 200 with CORS headers.
+
 - Phase 0 close-out (2026-11-26): CI run `45801938354` on `main` green
   (Backend, Frontend, SonarQube Cloud scan); SonarQube issues API for PR #12:
   0 open; branch protection confirmed via `gh api …/branches/main/protection`.
@@ -212,10 +216,15 @@ similarity dedup remains descoped.
 
 ## Immediate Next Steps (in order)
 
-1. Phase 0 open points (see "Resume Here"): in-process server tests, README,
-   encoding fix, seed script.
-2. **Login system**, then the remaining features in `docs/development-plan.md`
-   order (Login UI → redesign → sync → Android).
+Agreed order (2026-11-26, `docs/development-plan.md` "Priority order after
+Phase 0"):
+
+1. Merge `phase0/inprocess-tests`.
+2. **Login system backend** → **Login UI** → **seed script** →
+   documentation/README. In parallel: a docs-only agent for the encoding fix
+   (open point 3) and the README rewrite (open point 2). Future work after
+   that: redesign, Android, sync, budgets, export, Grumpy Uncle, server
+   container.
 3. **`docs/documentation.md`** (German, 30% of grade) — still has TODOs for the
    architecture diagram, screenshots and Fazit. Add the Docker/PostgreSQL setup
    once Step 3 lands. Shelf server container is not in Compose yet.
