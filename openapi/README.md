@@ -40,6 +40,12 @@ Please follow the [installation procedure](#installation--usage) and then run th
 ```dart
 import 'package:openapi/api.dart';
 
+// TODO Configure HTTP Bearer authorization: bearerAuth
+// Case 1. Use String Token
+//defaultApiClient.getAuthentication<HttpBearerAuth>('bearerAuth').setAccessToken('YOUR_ACCESS_TOKEN');
+// Case 2. Use Function which generate token.
+// String yourTokenGeneratorFunction() { ... }
+//defaultApiClient.getAuthentication<HttpBearerAuth>('bearerAuth').setAccessToken(yourTokenGeneratorFunction);
 
 final api_instance = DefaultApi();
 final message = Message(); // Message | 
@@ -64,24 +70,33 @@ Class | Method | HTTP request | Description
 *DefaultApi* | [**createCategory**](doc//DefaultApi.md#createcategory) | **POST** /categories | Create a category if it does not already exist (find-or-create)
 *DefaultApi* | [**createExpense**](doc//DefaultApi.md#createexpense) | **POST** /expenses | Create a new expense
 *DefaultApi* | [**deleteExpense**](doc//DefaultApi.md#deleteexpense) | **DELETE** /expenses/{id} | Delete an expense
-*DefaultApi* | [**listCategories**](doc//DefaultApi.md#listcategories) | **GET** /categories | List all known expense categories
-*DefaultApi* | [**listExpenses**](doc//DefaultApi.md#listexpenses) | **GET** /expenses | List all expenses
+*DefaultApi* | [**listCategories**](doc//DefaultApi.md#listcategories) | **GET** /categories | List the current user's categories
+*DefaultApi* | [**listExpenses**](doc//DefaultApi.md#listexpenses) | **GET** /expenses | List the current user's expenses
+*DefaultApi* | [**login**](doc//DefaultApi.md#login) | **POST** /auth/login | Log in and receive a bearer token
+*DefaultApi* | [**register**](doc//DefaultApi.md#register) | **POST** /auth/register | Register a new user account
 *DefaultApi* | [**updateExpense**](doc//DefaultApi.md#updateexpense) | **PUT** /expenses/{id} | Update an existing expense
 
 
 ## Documentation For Models
 
+ - [AuthToken](doc//AuthToken.md)
  - [Category](doc//Category.md)
  - [CategoryInput](doc//CategoryInput.md)
  - [ClassifyInput](doc//ClassifyInput.md)
+ - [Credentials](doc//Credentials.md)
  - [Expense](doc//Expense.md)
  - [ExpenseInput](doc//ExpenseInput.md)
  - [Message](doc//Message.md)
+ - [User](doc//User.md)
 
 
 ## Documentation For Authorization
 
-Endpoints do not require authorization.
+
+Authentication schemes defined for the API:
+### bearerAuth
+
+- **Type**: HTTP Bearer authentication
 
 
 ## Author

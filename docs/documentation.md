@@ -69,15 +69,25 @@ KI-Dienst:
 
 ### 3.3 Datenmodell
 
-Tabelle `expenses` (PostgreSQL): `id` (PK, `GENERATED ALWAYS AS IDENTITY`), `title`, `category`,
+Tabelle `users` (seit Migration `002_users.sql`): `id` (PK, Identity), `username`
+(Unique-Index auf `lower(username)`), `password_hash` (bcrypt), `created_at`.
+
+Tabelle `expenses` (PostgreSQL): `id` (PK, `GENERATED ALWAYS AS IDENTITY`), `user_id`
+(FK auf `users`, `ON DELETE CASCADE`), `category_id`, `title`,
 `subcategory` (optional), `description` (optional), `amount` (`NUMERIC(12, 2)`, exakte
 Cent-Betraege; in der API weiterhin `number`, Umrechnung nur im Handler),
 `timestamp` (`TIMESTAMPTZ`, Default `now()`; in der API als ISO-8601 in UTC).
+Der zusammengesetzte Fremdschluessel `(user_id, category_id) -> categories (user_id, id)`
+verhindert, dass eine Ausgabe auf die Kategorie eines anderen Nutzers zeigt. Die API
+liefert weiterhin den Kategorienamen (per `JOIN`), das `Expense`-Schema blieb gleich.
 
-Tabelle `categories` (PostgreSQL): `id` (PK, Identity), `name` mit Unique-Index auf `lower(name)` (case-insensitive Eindeutigkeit, ersetzt SQLites `COLLATE NOCASE`).
-Schema und Seed (9 Basiskategorien) stehen in der Migration
-`server_app/migrations/001_initial_schema.sql` (siehe Entwurfsentscheidung 7). `other` ist
-bewusst **nicht** Teil des Seeds (siehe Abschnitt 5, Entwurfsentscheidung 6).
+Tabelle `categories` (PostgreSQL): `id` (PK, Identity), `user_id` (FK auf `users`),
+`name` mit Unique-Index auf `(user_id, lower(name))`: jede Kategorie gehoert genau
+einem Nutzer, Eindeutigkeit gilt case-insensitive pro Nutzer.
+Die 9 Basiskategorien stehen als Dart-Konstante in
+`server_app/lib/db/default_categories.dart` und werden bei der Registrierung in derselben
+Transaktion fuer den neuen Nutzer angelegt (frueher globaler Seed in Migration 001).
+`other` ist bewusst **nicht** Teil davon (siehe Abschnitt 5, Entwurfsentscheidung 6).
 
 Im API-Vertrag: `ExpenseInput` (vom Client gesendet) und `Expense` (`allOf`
 ExpenseInput + server-vergebene `id`/`timestamp`). `category` war urspruenglich
@@ -110,6 +120,66 @@ Modellverhaltens fuer diese Ausarbeitung (vgl. Journal 7, 8, 9).
 | GET | `/categories` | alle Kategorien auflisten |
 | POST | `/categories` | Kategorie find-or-create (case-insensitive) |
 | POST | `/chat` | generischer Chat-Endpunkt (Alt-Pfad) |
+| POST | `/auth/register` | Nutzer anlegen (oeffentlich) |
+| POST | `/auth/login` | Anmelden, liefert JWT (oeffentlich) |
+
+Alle Endpunkte ausser `/`, `/auth/register` und `/auth/login` verlangen den Header
+`Authorization: Bearer <JWT>` und antworten sonst mit `401`.
+
+### 3.5 Authentifizierung und Datentrennung
+
+**Ablauf.** `POST /auth/register` nimmt `{username, password}` entgegen, legt den Nutzer
+an und kopiert die Basiskategorien fuer ihn (eine Transaktion). `POST /auth/login`
+prueft das Passwort und liefert `{token, expiresAt}`. Der Client sendet das Token bei
+jeder weiteren Anfrage im `Authorization`-Header.
+
+**Middleware-Reihenfolge** (`server_app/lib/server.dart`): Logging -> CORS -> Auth ->
+Router. CORS liegt aussen, damit Browser-Preflights (`OPTIONS`) ohne Token beantwortet
+werden und auch `401`-Antworten die CORS-Header tragen; sonst saehe der Browser statt
+eines `401` nur einen CORS-Fehler. Die Auth-Middleware prueft das Token und legt die
+Nutzer-ID in den Request-Kontext (`request.change(context: ...)`).
+
+**Datentrennung.** Jede Abfrage auf `expenses` und `categories` filtert mit
+`WHERE user_id = @userId`, wobei die ID ausschliesslich aus dem geprueften Token stammt,
+nie aus Body oder URL. Eine fremde Ausgabe ist von einer nicht existierenden nicht zu
+unterscheiden (`404`). Der `/classify`-Prompt sieht nur die eigenen Kategorien.
+
+**Benutzername.** Wird getrimmt und kleingeschrieben, dann gegen `^[a-z0-9._-]{3,32}$`
+geprueft. Keine E-Mail-Adresse: ohne Verifikation und Passwort-Reset (nicht im Umfang)
+wuerde sie nur personenbezogene Daten speichern.
+
+**Passwoerter.** bcrypt (Paket `bcrypt`, Cost 12, in Tests 4). Laenge 8 bis 72 Byte,
+gezaehlt in UTF-8, weil bcrypt alles nach Byte 72 ignoriert. Das Paket rechnet
+synchron; ein Hash mit Cost 12 dauert gemessen rund 0,3 s (Cost 4: 15 ms) und wuerde den einzigen Isolate des
+Servers (und damit alle anderen Anfragen) blockieren. Deshalb laeuft es in
+`Isolate.run`, also in einem eigenen Isolate mit eigenem Speicher. Bei unbekanntem
+Benutzernamen wird trotzdem gegen einen beim Start berechneten Dummy-Hash geprueft und
+dasselbe `401` geliefert wie bei falschem Passwort, damit die Antwortzeit nicht verraet,
+welche Konten existieren.
+
+**Token.** JWT mit HS256 (Paket `dart_jsonwebtoken`), Claims `sub` (Nutzer-ID), `iat`,
+`exp`, gueltig eine Stunde. Vor der Signaturpruefung muss der Header `alg = HS256` und
+`typ = JWT` enthalten; alles andere, auch `alg = none`, wird abgelehnt. Das Ablaufdatum
+wird gegen eine injizierte Uhr geprueft (testbar wie die Analytics-Getter). Der
+Schluessel `JWT_SECRET` (mindestens 32 Byte) kommt aus der Umgebung oder der `.env`;
+fehlt er, startet der Server nicht.
+
+**Rate-Limits** (im Speicher, Schiebefenster): Login 5 Fehlversuche pro (IP,
+Benutzername) in 15 Minuten, ein erfolgreicher Login setzt den Zaehler zurueck;
+Registrierung 10 Versuche pro IP und Stunde. Danach `429` mit `Retry-After` in Sekunden.
+Abgelaufene Eintraege werden bei jeder Pruefung entfernt.
+
+**Bekannte Grenzen.**
+- `409` bei vergebenem Benutzernamen verraet, dass das Konto existiert. Bewusster
+  Kompromiss zugunsten einer verstaendlichen Fehlermeldung; das Register-Limit pro IP
+  bremst das Abfragen vieler Namen.
+- Password Spraying: Der Login-Schluessel (IP, Benutzername) stoppt nicht, dass von einer
+  IP ein Passwort gegen viele Benutzernamen probiert wird; jeder Name hat sein eigenes
+  Kontingent.
+- Die Limits liegen im Speicher eines Prozesses: ein Neustart setzt sie zurueck, mehrere
+  Server-Instanzen teilen sie nicht.
+- Kein Refresh-Token und kein Logout auf dem Server: ein ausgegebenes Token bleibt bis
+  zum Ablauf (1 Stunde) gueltig.
 
 ## 4. Umsetzung nach Phasen
 
@@ -153,6 +223,12 @@ Modellverhaltens fuer diese Ausarbeitung (vgl. Journal 7, 8, 9).
   `COLLATE NOCASE`, Find-or-create als ein `INSERT ... ON CONFLICT ... DO UPDATE
   ... RETURNING`, `RETURNING` statt `lastInsertRowId`. Verbindungsdaten aus
   `.env`/Umgebung (`DbConfig`). 51 Backend-Tests.
+- **Login-System (Backend):** Migration `002_users.sql` (Tabelle `users`,
+  `user_id` auf `expenses` und `categories`, zusammengesetzter Fremdschluessel),
+  `/auth/register` und `/auth/login`, bcrypt im Isolate, JWT (HS256), Auth-Middleware,
+  Rate-Limits, alle Abfragen pro Nutzer gefiltert (siehe Abschnitt 3.5). Bestehende
+  Ausgaben und Kategorien werden von der Migration geloescht (nur Entwicklungsdaten).
+  108 Backend-Tests, darunter Isolationstests mit zwei Nutzern in beide Richtungen.
 
 ## 5. Entwurfsentscheidungen (Auswahl)
 
@@ -190,11 +266,17 @@ Kurzfassung:
    Starts, bei Fehler kompletter Rollback). Bereits angewendete Dateien werden nie
    geaendert, Aenderungen (z. B. `users` fuer den Login) kommen als neue Datei.
    Eigener kleiner Runner statt Bibliothek, da nur Vorwaerts-Migrationen noetig sind.
+8. **Datentrennung im Server und im Schema:** die Nutzer-ID kommt nur aus dem
+   geprueften Token und steht in jeder Abfrage; zusaetzlich verhindert der
+   zusammengesetzte Fremdschluessel `(user_id, category_id)` fremde Kategorien auf
+   Datenbankebene. PostgreSQL-Row-Level-Security waere eine weitere Schicht, ist aber
+   nicht im Umfang. Details und bekannte Grenzen in Abschnitt 3.5.
 
 ## 6. Qualit�tssicherung
 
-- **Automatische Tests:** Backend `dart test` (51, inkl. Server-CRUD, Betraege und Kategorien gegen PostgreSQL, Migrationen, DB-Konfiguration, AI-Parsing
-  mit Unterkategorien und KI-Kommentar sowie Kategorien-Handler); Frontend
+- **Automatische Tests:** Backend `dart test` (108, inkl. Server-CRUD, Betraege und Kategorien gegen PostgreSQL, Migrationen, DB-Konfiguration, AI-Parsing
+  mit Unterkategorien und KI-Kommentar, Kategorien-Handler, Registrierung/Login,
+  JWT-Varianten, CORS, Rate-Limits und Datentrennung zwischen zwei Nutzern); Frontend
   `flutter test` (6 Provider + 12 Analytics = 18). Alle gr�n.
 - **Statische Analyse:** `dart analyze` und `flutter analyze` ohne Befunde.
 - **Teststrategie:** Provider-Tests laufen gegen einen `FakeDefaultApi`
@@ -215,7 +297,8 @@ PostgreSQL-Container plus zwei Prozesse (Datenbank, dann Backend, dann Frontend)
 Abschnitt 5. Kurz:
 
 ```bash
-# Einmalig: cp .env.example .env und POSTGRES_PASSWORD setzen
+# Einmalig: cp .env.example .env, POSTGRES_PASSWORD und JWT_SECRET setzen
+# (JWT_SECRET z. B. mit: openssl rand -base64 48)
 docker compose up -d --wait                   # PostgreSQL 16 auf 127.0.0.1:5432
 
 # Terminal 1  Backend
@@ -229,7 +312,9 @@ cd flutter_application && flutter run -d chrome
 
 Geplante bzw. diskutierte Erweiterungen (nach Aufwand/Abh�ngigkeit geordnet):
 
-1. **Login-System (NAECHSTER SCHRITT):** Benutzer-Tabelle, Passwort-Hashing,
+1. **Login-Oberflaeche (NAECHSTER SCHRITT):** Login/Registrierung im Flutter-Client,
+   Token im Provider, `Authorization`-Header im generierten Client. Das Backend ist
+   fertig (Abschnitt 3.5). Vorher geplant: Benutzer-Tabelle, Passwort-Hashing,
    Auth-Endpunkte, Token/Session, Auth-Middleware, `user_id`-Fremdschl�ssel auf
    `expenses`. Voraussetzung f�r korrekte Mehrbenutzer-Synchronisierung.
 2. **Ger�te-Synchronisierung:** f�llt weitgehend aus dem (Docker-)Deployment

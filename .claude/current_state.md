@@ -107,10 +107,15 @@ per step (Steps 1–5 written).
   without `sonar.sources`/`sonar.tests`, binaries and `tools/**` excluded.
   Log: `docs/ai_logs.md` Entry 10, "Steps 4 + 5 follow-up".
   - Test classification: SonarQube Cloud ignores `sonar.tests` AND
-    `sonar.test.inclusions` (main scan: "configured but have no effect:
-    sonar.test.inclusions"). It auto-detects tests by a `test/` directory in
-    the path, which covers all our test files. `sonar.test.inclusions` removed
-    from `sonar-project.properties` on `chore/state-cleanup`.
+    `sonar.test.inclusions` (scan: "configured but have no effect … The new
+    analysis scope UX analyzes the whole project by default").
+    `sonar.test.inclusions` removed on `chore/state-cleanup`. CORRECTED
+    (PR #17): the scanner's message lists `test/` directories as a test
+    criterion, but the Dart files in `test/` are still indexed as main code
+    (qualifier `FIL`, e.g. `server_app/test/auth_test.dart` with 150 lines
+    to cover), so they counted toward new-code coverage. Fix:
+    `sonar.coverage.exclusions=**/test/**` (still analyzed for issues). No
+    documented property or UI setting classifies them as tests in this mode.
 - **Branch protection on `main`** — set via `gh api` (classic protection):
   required checks `Backend (analyze + test)`, `Frontend (analyze + test)`,
   `SonarQube Cloud scan` (app GitHub Actions); `strict: false` (branch need not
@@ -133,18 +138,33 @@ per step (Steps 1–5 written).
 
 ## Branch State
 
-- `main` — all of Phase 0 (PR #9–#12) + PR #15 (`chore/state-cleanup`),
-  HEAD `8f24bc6`, protected. Remote branch `origin/chore/state-cleanup` still
-  exists (merged; can be deleted).
-- `phase0/inprocess-tests` — from `main`, Step 6 (in-process server tests).
-  Commits: brief + priority order, code + AI log, this state update. NOT
-  pushed. Julian pushes, opens the PR, checks CI + SonarQube handler coverage,
-  merges.
+- `main` — all of Phase 0 (PR #9–#12, #15) + Step 6 (PR #16, merge commit
+  `715d9e0`), protected. All earlier feature/phase branches deleted locally
+  and on the remote.
+- Tag `pre-login` on `main` (Julian): demo fallback before login lands.
+  Not present yet when `feature/login-backend` was branched.
+- `feature/login-backend` — from `main` (`715d9e0`), Step 7 (login backend).
+  CODE DONE, committed locally, NOT pushed: `e73c94d` brief, `48d7c04`
+  api.yaml, `1aded5a` migration 002 + auth + scoping + tests, `6f45cbc`
+  `.env.example`/`ci.yml` `JWT_SECRET`, plus the docs commit. Julian: tag
+  `pre-login` on `main`, regenerate `openapi/`, `flutter analyze` + `flutter
+  test`, push, open the PR, check CI. The regenerated client goes in its own
+  commit on this branch. Don't merge before `feature/login-ui` is ready.
+  `feature/login-ui` branches from it; both PRs merge back to back, so `main`
+  never has an app that gets 401 everywhere.
+- Step 7 summary: `migrations/002_users.sql` (deletes dev expenses/categories,
+  `users`, per-user categories, composite FK `expenses_user_category_fkey`),
+  `lib/auth/` (AuthConfig, PasswordHasher in `Isolate.run`, TokenService
+  HS256-only, RateLimiter, middleware, register/login handlers), all queries
+  filtered by `user_id`, `/echo` removed. 111/111 tests. AI log Entry 11,
+  `documentation.md` §3.5. Julian's local `.env` got a random `JWT_SECRET`;
+  the local dev DB `smart_spend` is still at schema 1, the next server start
+  applies 002 and wipes its expenses/categories (decision B).
 - Dependabot PRs #13 and #14: closed.
 
 ## Resume Here — Phase 0 open points
 
-1. **In-process server tests.** DONE on `phase0/inprocess-tests` (Step 6):
+1. **In-process server tests.** DONE, MERGED (PR #16, Step 6):
    `lib/server.dart` `buildHandler()`, tests serve it in-process, one
    subprocess smoke test in `test/server_startup_test.dart`. 52/52; coverage
    expense_handlers 63.6 %, category_handlers 90 %, lib/server.dart 70.7 %.
@@ -172,9 +192,13 @@ per step (Steps 1–5 written).
 Still open: the shelf server is not in Compose (needs `DB_HOST=db` and
 `migrations/` copied into the image).
 
-After Phase 0: **Login system** (`docs/development-plan.md` feature 2): `users`
-table, password hashing, register/login endpoints, JWT, auth middleware,
-`user_id` FK on `expenses` and categories.
+Open for Phase 4: CORS still sends `Access-Control-Allow-Origin: *`
+(`server_app/lib/server.dart:43`, asserted in `test/auth_test.dart:255/262`).
+The development plan requires CORS restricted to the web app's origin.
+
+Login system backend (Step 7): code done on `feature/login-backend`, see
+Branch State. Next: Login UI (Flutter: login/register screens, token in a
+provider, `Authorization` header on the generated client, handle 401/429).
 
 Optional subcategory follow-ups if revisited later: analytics drill-down by
 subcategory; promote subcategory to its own managed vocabulary only if the
@@ -185,6 +209,13 @@ only. True synonyms rely on the AI prompt (A) + user review (C). Embedding-
 similarity dedup remains descoped.
 
 ## Verification (last run)
+
+- Step 7 (2026-11-26): `dart analyze lib test bin` clean; `dart test` 111/111;
+  coverage auth files 93.7–100 %, expense_handlers 64.3 %, category_handlers
+  90.9 %, server.dart 72.5 %; `actionlint` clean; curl session (throwaway DB,
+  port 8090): register 201, login 200, GET with token 200, without 401 +
+  `WWW-Authenticate` + CORS, preflight 200 with `Authorization` allowed.
+  Not run: `flutter analyze`/`flutter test` against the regenerated client, CI.
 
 - Step 6 (2026-11-26): `dart analyze lib test bin` clean; `dart test
   --coverage-path=…` 52/52 in 8 s; `dart run bin/server.dart` on 8082,
@@ -219,15 +250,18 @@ similarity dedup remains descoped.
 Agreed order (2026-11-26, `docs/development-plan.md` "Priority order after
 Phase 0"):
 
-1. Merge `phase0/inprocess-tests`.
-2. **Login system backend** → **Login UI** → **seed script** →
-   documentation/README. In parallel: a docs-only agent for the encoding fix
-   (open point 3) and the README rewrite (open point 2). Future work after
-   that: redesign, Android, sync, budgets, export, Grumpy Uncle, server
-   container.
-3. **`docs/documentation.md`** (German, 30% of grade) — still has TODOs for the
-   architecture diagram, screenshots and Fazit. Add the Docker/PostgreSQL setup
-   once Step 3 lands. Shelf server container is not in Compose yet.
+1. **Login system backend** (Step 7, `feature/login-backend`): code done;
+   Julian's steps open (see Branch State).
+2. **Login UI** (`feature/login-ui` from `feature/login-backend`); both PRs
+   merge back to back.
+3. **Seed script** (demo data for the presentation on 1 December).
+4. **`docs/documentation.md`** (German, 30% of grade): still has TODOs for the
+   architecture diagram, screenshots and Fazit; add the Docker/PostgreSQL
+   setup (Step 3 is merged) and the auth design. Then README.
+
+In parallel: a docs-only agent for the encoding fix (open point 3) and the
+README rewrite (open point 2). Future work after that: redesign, Android,
+sync, budgets, export, Grumpy Uncle, server container.
 
 ## Docs / Journal Policy
 
@@ -261,6 +295,7 @@ docker compose down          # add -v to also delete the db_data volume
 
 # Backend (from server_app/). DB config comes from env or the repo-root .env
 # (POSTGRES_DB/USER/PASSWORD, DB_HOST default localhost, DB_PORT default 5432);
+# JWT_SECRET (>= 32 bytes) is required, BCRYPT_COST optional (default 12);
 # migrations in migrations/ run on startup:
 dart pub get --enforce-lockfile
 dart analyze lib test bin

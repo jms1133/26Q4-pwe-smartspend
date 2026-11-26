@@ -2,15 +2,16 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:http/http.dart';
 import 'package:test/test.dart';
 
 import 'support/test_database.dart';
+import 'support/test_server.dart';
 
 /// The only subprocess test. `server_test.dart` serves the handler inside the
 /// test process; this one checks what that skips: `bin/server.dart` reading
-/// PORT/POSTGRES_DB from the environment, running the migrations at startup
-/// and printing the bound port. Requires `dart` on PATH.
+/// PORT/POSTGRES_DB/JWT_SECRET/BCRYPT_COST from the environment, running the
+/// migrations at startup and printing the bound port. Requires `dart` on
+/// PATH.
 void main() {
   late Process process;
   late String testDatabase;
@@ -31,7 +32,12 @@ void main() {
     process = await Process.start(
       'dart',
       ['run', 'bin/server.dart'],
-      environment: {'PORT': '0', 'POSTGRES_DB': testDatabase},
+      environment: {
+        'PORT': '0',
+        'POSTGRES_DB': testDatabase,
+        'JWT_SECRET': testJwtSecret,
+        'BCRYPT_COST': '$testBcryptCost',
+      },
     );
 
     // Keep draining stdout with listen() so the child's output buffer can't
@@ -42,12 +48,12 @@ void main() {
         .transform(utf8.decoder)
         .transform(const LineSplitter())
         .listen((line) {
-      final match =
-          RegExp(r'Server running on http://\S+:(\d+)').firstMatch(line);
-      if (match != null && !boundPort.isCompleted) {
-        boundPort.complete(match.group(1));
-      }
-    });
+          final match = RegExp(r'Server running on http://\S+:(\d+)')
+              .firstMatch(line);
+          if (match != null && !boundPort.isCompleted) {
+            boundPort.complete(match.group(1));
+          }
+        });
     process.stderr.transform(utf8.decoder).listen(stderr.write);
 
     final port = await boundPort.future.timeout(
@@ -56,8 +62,35 @@ void main() {
           throw StateError('Server did not report a bound port within 30s'),
     );
 
-    final response = await get(Uri.parse('http://127.0.0.1:$port/expenses'));
+    final client = ApiClient('http://127.0.0.1:$port', null);
+    final credentials = {'username': 'alice', 'password': testPassword};
+    expect(
+      (await client.postJson('/auth/register', credentials)).statusCode,
+      201,
+    );
+    final login = await client.postJson('/auth/login', credentials);
+    final token = jsonDecode(login.body)['token'] as String;
+
+    final response = await ApiClient(client.host, token).get('/expenses');
     expect(response.statusCode, 200);
     expect(jsonDecode(response.body), isEmpty);
+  });
+
+  test('bin/server.dart refuses to start without JWT_SECRET', () async {
+    process = await Process.start(
+      'dart',
+      ['run', 'bin/server.dart'],
+      // An env file path can't be passed, so blank the variable instead;
+      // the process environment overrides the repo-root .env.
+      environment: {'PORT': '0', 'POSTGRES_DB': testDatabase, 'JWT_SECRET': ''},
+    );
+    final stderrText = process.stderr.transform(utf8.decoder).join();
+    process.stdout.drain<void>();
+
+    expect(
+      await process.exitCode.timeout(const Duration(seconds: 30)),
+      isNot(0),
+    );
+    expect(await stderrText, contains('JWT_SECRET is not set'));
   });
 }

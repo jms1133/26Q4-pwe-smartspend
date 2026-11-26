@@ -38,6 +38,7 @@ jobs:
       POSTGRES_DB: smart_spend
       POSTGRES_USER: smart_spend
       POSTGRES_PASSWORD: ci-test-only
+      JWT_SECRET: ci-test-only-jwt-secret-of-at-least-32-bytes
     defaults:
       run:
         working-directory: server_app

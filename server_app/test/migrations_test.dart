@@ -51,8 +51,9 @@ void main() {
 
     test('the repository migrations directory loads', () {
       final migrations = loadMigrations('migrations');
-      expect(migrations.first.version, 1);
+      expect(migrations.map((m) => m.version).take(2), [1, 2]);
       expect(migrations.first.name, 'initial_schema');
+      expect(migrations[1].name, 'users');
     });
   });
 
@@ -75,8 +76,9 @@ void main() {
     });
 
     Future<List<int>> recordedVersions() async {
-      final rows =
-          await db.execute('SELECT version FROM schema_version ORDER BY 1');
+      final rows = await db.execute(
+        'SELECT version FROM schema_version ORDER BY 1',
+      );
       return rows.map((r) => r[0] as int).toList();
     }
 
@@ -88,8 +90,10 @@ void main() {
       return rows.first[0] as bool;
     }
 
+    // Versions far above the repository's, so new repository migrations
+    // don't collide with these test-only ones.
     const second = Migration(
-      version: 2,
+      version: 900,
       name: 'add_notes',
       sql: 'CREATE TABLE notes (id INTEGER PRIMARY KEY);',
     );
@@ -97,22 +101,27 @@ void main() {
     test('applies pending migrations once and records them', () async {
       final repo = loadMigrations('migrations');
 
-      expect(await applyMigrations(db, repo), [1]);
-      expect(await recordedVersions(), [1]);
-      expect(await tableExists('expenses'), isTrue);
+      final repoVersions = repo.map((m) => m.version).toList();
 
+      expect(await applyMigrations(db, repo), repoVersions);
+      expect(await recordedVersions(), repoVersions);
+      expect(await tableExists('expenses'), isTrue);
+      expect(await tableExists('users'), isTrue);
+
+      // 002 deletes the global seed categories from 001; seeds are now
+      // copied per user on registration.
       final seeded = await db.execute('SELECT count(*) FROM categories');
-      expect(seeded.first[0], 9);
+      expect(seeded.first[0], 0);
 
       expect(await applyMigrations(db, repo), isEmpty);
-      expect(await applyMigrations(db, [...repo, second]), [2]);
-      expect(await recordedVersions(), [1, 2]);
+      expect(await applyMigrations(db, [...repo, second]), [900]);
+      expect(await recordedVersions(), [...repoVersions, 900]);
       expect(await tableExists('notes'), isTrue);
     });
 
     test('rolls back everything when a migration fails', () async {
       const broken = Migration(
-        version: 3,
+        version: 901,
         name: 'broken',
         sql: 'CREATE TABLE half_done (id INTEGER); SELECT * FROM missing;',
       );
@@ -131,8 +140,7 @@ void main() {
       expect(await tableExists('half_done'), isFalse);
     });
 
-    test('refuses a database with a version the code does not know',
-        () async {
+    test('refuses a database with a version the code does not know', () async {
       final repo = loadMigrations('migrations');
       await applyMigrations(db, [...repo, second]);
 
