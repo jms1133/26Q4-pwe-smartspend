@@ -13,34 +13,31 @@ analytics, dynamic categories, AI subcategories, KI-Kommentar: AI log
 Entries 1–9. Phase 0 infrastructure (Steps 1–6: test port, Docker Compose +
 PostgreSQL, SQLite → PostgreSQL, SonarQube Cloud + GitHub Actions, in-process
 server tests): Entry 10. Step 7 login backend: Entry 11, merged as PR #17.
-Step 8 login UI: Entry 12, done on `feature/login-ui`, PR not yet opened.
+Step 8 login UI: Entry 12, merged as PR #19.
 
 ## Branches
 
-- `main` at `dc20c59` (PR #18), protected: required checks Backend, Frontend,
-  SonarQube Cloud scan; no reviews; Julian can bypass (`enforce_admins:
-  false`). No open PRs.
-- **`main` requires login since `c1a4488`**: every route except `OPTIONS`,
-  `/` and `/auth/*` returns 401, and the app on `main` sends no token, so it
-  is unusable until Step 8 merges. Demo fallback: tag `pre-login` on
-  `715d9e0` (pushed); see open point 8.
-- `feature/login-ui` from `dc20c59`: Step 8 complete, 8 commits, local
-  only. Julian pushes and opens the PR.
+- `main` at `1ebf5af` (PR #19, Step 8), protected: required checks Backend,
+  Frontend, SonarQube Cloud scan; no reviews; Julian can bypass
+  (`enforce_admins: false`). The app on `main` works again with login.
+  Demo fallback still available: tag `pre-login` on `715d9e0`; see open
+  point 8.
+- `chore/state-after-login-ui` from `1ebf5af`: this state update, local.
+  `feature/login-ui` merged and deleted locally (remote branch still there).
+- Uncommitted: one new line in `docs/classification_log.jsonl` from Julian's
+  Chrome end-to-end test; Julian decides whether to commit it.
 
 ## Current step
 
-Step 8 – Login UI on `feature/login-ui`. Brief: `docs/development-plan.md`,
-"Step 8 – Login UI". AI log Entry 12. Open: Done items 4 (Chrome end-to-end)
-and 5 (CI + SonarQube gate) for Julian. Risk: new-code coverage on
-`main.dart` is low (29 % for the whole file), see Entry 12 open questions.
+None in progress. Step 8 done (all 6 Done items, incl. Julian's Chrome
+end-to-end check). Next: seed script.
 
 ## Next steps (in order, presentation on 1 December)
 
-1. Step 8 Login UI: push, PR, Julian's checks, merge.
-2. Seed script with demo data.
-3. `docs/documentation.md` (German): architecture diagram, screenshots,
+1. Seed script with demo data (users `alice`/`bob` plus expenses).
+2. `docs/documentation.md` (German): architecture diagram, screenshots,
    Fazit, Docker/PostgreSQL setup, auth design. Then README.
-4. In parallel, docs-only agent: encoding fix (open point 3) and README
+3. In parallel, docs-only agent: encoding fix (open point 3) and README
    rewrite (open point 2).
 
 Future work: `docs/development-plan.md`, "Priority order after Phase 0".
@@ -68,15 +65,18 @@ Future work: `docs/development-plan.md`, "Priority order after Phase 0".
    `smart_spend` is at schema 2 after migration 002; the `pre-login` code
    (`715d9e0`) expects schema 1, so run it against a separate empty DB
    (e.g. `POSTGRES_DB=smart_spend_prelogin`).
-9. The shelf server is not in Compose (needs `DB_HOST=db` and `migrations/`
+9. Follow-ups from Step 8 (Entry 12, open questions): `main.dart` coverage
+   29 % (no widget tests for the expense form and tiles); `_classify` handles
+   401 outside `ExpenseProvider`.
+10. The shelf server is not in Compose (needs `DB_HOST=db` and `migrations/`
    in the image).
-10. Deferred decision: category dedup is trim + case-insensitive only;
+11. Deferred decision: category dedup is trim + case-insensitive only;
     synonyms rely on the AI prompt and user review.
 
 ## Last verification run
 
-Step 8 (2026-11-26, `feature/login-ui`): `flutter analyze` clean,
-`flutter test --coverage` 48/48, `flutter pub get --enforce-lockfile` exit 0
-on the committed lock; `server_app`: `dart analyze lib test bin` clean,
-`dart test` 111/111. Not run: Chrome end-to-end, CI. Details:
-`docs/ai_logs.md` Entry 12, "Verification".
+Step 8 merge (2026-11-26): PR #19 merged as `1ebf5af`; all PR checks green,
+SonarQube Cloud quality gate OK (new coverage 89.3 %, 0 % duplication); CI
+run `45856838247` on `main` green (all three jobs). Julian: Chrome end-to-end
+done. Locally before the merge: `flutter analyze` clean, `flutter test` 48/48,
+`--enforce-lockfile` exit 0, `dart test` 111/111. Details: Entry 12.

@@ -718,12 +718,14 @@ Phase 0 runs as one sequential session. One subsection per step, each using the 
   - First run of the provider tests: 4 failures "Binding has not yet been initialized", because `onSessionEnded` reads `GlobalKey.currentState`. Fixed with `TestWidgetsFlutterBinding.ensureInitialized()` in those test files (in the app `runApp` creates the binding).
   - `flutter pub remove`/`add` dropped the blank line before `dev_dependencies:` in `pubspec.yaml`; restored.
   - Mutation check: with the `popUntil` line commented out, "401 on a pushed screen returns to login with expired notice" fails; restored.
+  - Chrome token test (Done item 4): the first attempt showed no effect because the page was not reloaded. The app keeps the token in memory and reads `localStorage` only in `restore()` at startup. The brief's Done item 4 said "trigger a request"; a reload is required.
 - **Verification:**
   - `flutter analyze`: No issues found. `flutter test --coverage`: 48/48 (18 before + 30 new). Coverage: `auth_provider.dart` 91.9 %, `expense_provider.dart` 87.2 %, `login_screen.dart` 88.9 %, `auth_gate.dart`, `app_services.dart`, `token_store.dart`, `credential_rules.dart`, `api_client_factory.dart` 100 %, `api_errors.dart` 83.3 %, `main.dart` 29.2 %.
   - `flutter pub get --enforce-lockfile` on the committed `pubspec.lock` (commit `863b987`): exit 0.
   - `server_app`: `dart analyze lib test bin` clean, `dart test` 111/111.
   - New tests: `test/auth_provider_test.dart` (login success/wrong password/429/network/isBusy, register three cases, logout clears data, parallel logouts, restore valid/expired, bearer header, expiry, `tooManyAttemptsMessage`, `SharedPreferencesTokenStore` two cases), `test/expense_provider_session_test.dart` (401 → onUnauthorized, `clear()`, stale response alice → bob, network error), `test/auth_flow_widget_test.dart` (restore spinner, login when logged out, restored session → dashboard, validation, password mismatch, wrong password banner, login → dashboard, logout, 401 on a pushed screen). Shared helper `test/support/fake_backend.dart`.
-  - Not run: end-to-end in Chrome and CI (Done items 4 and 5, Julian).
+  - Done item 4 (Julian, Chrome): register alice → add expense → reload (still logged in, no login flash) → logout → register bob → empty list. Token edited in DevTools → Application → Local Storage, then page reload → first request 401 → login screen with the session-expired message.
+  - Done item 5: PR #19 checks green, SonarQube Cloud quality gate OK (new coverage 89.3 %), merged as `1ebf5af`; CI on `main` green (run `45856838247`).
 - **Open questions:**
-  - `main.dart` coverage stays low (expense form and dashboard tiles have no widget tests); SonarQube new-code coverage on the PR may land below 80 % because of the changed `main.dart` lines.
+  - Resolved: `main.dart` coverage stays low (expense form and dashboard tiles have no widget tests), but SonarQube new-code coverage on PR #19 was 89.3 %, above the 80 % gate.
   - `ExpenseFormScreen._classify` still creates its own `DefaultApi` from the shared `ApiClient`; it gets the token, but the 401 handling is duplicated outside `ExpenseProvider`.
