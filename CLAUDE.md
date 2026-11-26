@@ -46,8 +46,12 @@ Roadmap and agent phases: `docs/development-plan.md` (read when starting a phase
 11. **Done checklist:** every step brief ends with a numbered done list. The
     final report answers each item with evidence (command output, test names)
     or says "not done". Items marked "Julian" are mine to verify.
-12. **Session end:** the main session updates `.claude/current_state.md`
-    (branches, open PRs, open points) before finishing.
+12. Update `.claude/current_state.md` when a step's PR is ready, after a
+    merge, and at session end — not after every commit. Also update it
+    before a long pause or when the context is getting long, so a new
+    session can resume. Keep it short: branches, what's done, what's next,
+    open points. Decisions live in the brief, details in the AI log; don't
+    repeat them here.
 
 ## How to explain things to me
 - Write complete, production-ready code; don't withhold it. Explain the "why".
@@ -63,3 +67,7 @@ export PATH="/Users/julian.morales/code/FHDW/26Q4/WebEntwicklung/dependencies/fl
 - Backend (`server_app/`): `dart analyze lib test`, `dart test`, `dart run bin/server.dart`
 - Frontend (`flutter_application/`): `flutter analyze`, `flutter test`, `flutter run -d chrome --web-port=5000`
 - Port 8082 blocked by a stale test server: `lsof -tiTCP:8082 -sTCP:LISTEN | xargs kill`
+- Server needs `JWT_SECRET` (≥ 32 bytes) in the repo-root `.env`; optional `BCRYPT_COST` (default 12).
+- Backend coverage: `dart test --coverage-path=coverage/lcov.info`
+- DB shell: `docker compose exec db psql -U smart_spend -d smart_spend`
+- Stale UI: `flutter clean && flutter pub get`, then Cmd+Shift+R
