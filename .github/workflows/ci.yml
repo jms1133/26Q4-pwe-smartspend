@@ -1,0 +1,123 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FLUTTER_VERSION: 3.47.7
+
+jobs:
+  backend:
+    name: Backend (analyze + test)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: smart_spend
+          POSTGRES_USER: smart_spend
+          POSTGRES_PASSWORD: ci-test-only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U smart_spend -d smart_spend"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      DB_HOST: localhost
+      DB_PORT: 5432
+      POSTGRES_DB: smart_spend
+      POSTGRES_USER: smart_spend
+      POSTGRES_PASSWORD: ci-test-only
+    defaults:
+      run:
+        working-directory: server_app
+    steps:
+      - uses: actions/checkout@v7
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - run: dart pub get
+      - run: dart analyze lib test bin
+      - run: dart test --coverage-path=coverage/lcov.info
+      - uses: actions/upload-artifact@v7
+        with:
+          name: coverage-backend
+          path: server_app/coverage/lcov.info
+          if-no-files-found: error
+
+  frontend:
+    name: Frontend (analyze + test)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: flutter_application
+    steps:
+      - uses: actions/checkout@v7
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter test --coverage
+      - uses: actions/upload-artifact@v7
+        with:
+          name: coverage-frontend
+          path: flutter_application/coverage/lcov.info
+          if-no-files-found: error
+
+  sonar:
+    name: SonarQube Cloud scan
+    needs: [backend, frontend]
+    runs-on: ubuntu-latest
+    env:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+    steps:
+      - name: Skip notice
+        if: env.SONAR_TOKEN == ''
+        run: echo "SONAR_TOKEN is not available (e.g. pull request from a fork); skipping the scan."
+      - uses: actions/checkout@v7
+        if: env.SONAR_TOKEN != ''
+        with:
+          fetch-depth: 0
+      - uses: subosito/flutter-action@v2
+        if: env.SONAR_TOKEN != ''
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - name: Resolve dependencies for the Dart analyzer
+        if: env.SONAR_TOKEN != ''
+        run: |
+          (cd server_app && dart pub get)
+          (cd flutter_application && flutter pub get)
+      - uses: actions/download-artifact@v8
+        if: env.SONAR_TOKEN != ''
+        with:
+          name: coverage-backend
+          path: server_app/coverage
+      - uses: actions/download-artifact@v8
+        if: env.SONAR_TOKEN != ''
+        with:
+          name: coverage-frontend
+          path: flutter_application/coverage
+      - name: Make frontend lcov paths absolute
+        if: env.SONAR_TOKEN != ''
+        run: |
+          sed -i "s|^SF:lib/|SF:${GITHUB_WORKSPACE}/flutter_application/lib/|" flutter_application/coverage/lcov.info
+          grep '^SF:' server_app/coverage/lcov.info flutter_application/coverage/lcov.info
+      - uses: SonarSource/sonarqube-scan-action@v8
+        if: env.SONAR_TOKEN != ''
