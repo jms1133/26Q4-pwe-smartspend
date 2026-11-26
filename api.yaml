@@ -2,7 +2,57 @@ openapi: 3.0.0
 info:
   title: Smart Spend API
   version: 1.0.0
+security:
+  - bearerAuth: []
 paths:
+  /auth/register:
+    post:
+      summary: Register a new user account
+      operationId: register
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Credentials'
+      responses:
+        '201':
+          description: The created user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          description: Username or password does not meet the rules
+        '409':
+          description: The username is already taken
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /auth/login:
+    post:
+      summary: Log in and receive a bearer token
+      operationId: login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Credentials'
+      responses:
+        '200':
+          description: A signed access token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthToken'
+        '400':
+          description: Malformed request body
+        '401':
+          description: Unknown username or wrong password (indistinguishable)
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
   /chat:
     post:
       summary: Send a message to ChatGPT
@@ -20,6 +70,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Message'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
   /classify:
     post:
       summary: Classify raw expense text into a structured ExpenseInput
@@ -37,9 +89,11 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ExpenseInput'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
   /expenses:
     get:
-      summary: List all expenses
+      summary: List the current user's expenses
       operationId: listExpenses
       responses:
         '200':
@@ -50,6 +104,8 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/Expense'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
     post:
       summary: Create a new expense
       operationId: createExpense
@@ -66,6 +122,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Expense'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
   /expenses/{id}:
     put:
       summary: Update an existing expense
@@ -89,6 +147,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Expense'
+        '404':
+          description: No expense with this id for the current user
+        '401':
+          $ref: '#/components/responses/Unauthorized'
     delete:
       summary: Delete an expense
       operationId: deleteExpense
@@ -101,9 +163,13 @@ paths:
       responses:
         '204':
           description: Expense deleted successfully
+        '404':
+          description: No expense with this id for the current user
+        '401':
+          $ref: '#/components/responses/Unauthorized'
   /categories:
     get:
-      summary: List all known expense categories
+      summary: List the current user's categories
       operationId: listCategories
       responses:
         '200':
@@ -114,6 +180,8 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/Category'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
     post:
       summary: Create a category if it does not already exist (find-or-create)
       operationId: createCategory
@@ -136,8 +204,63 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Category'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  responses:
+    Unauthorized:
+      description: Missing, invalid or expired bearer token
+    TooManyRequests:
+      description: Too many attempts; retry after the number of seconds in Retry-After
+      headers:
+        Retry-After:
+          schema:
+            type: integer
   schemas:
+    Credentials:
+      type: object
+      required:
+        - username
+        - password
+      properties:
+        username:
+          type: string
+          description: >
+            3-32 characters from [a-z0-9._-]. The server trims and lowercases
+            it before validating, storing and comparing.
+          minLength: 3
+          maxLength: 32
+        password:
+          type: string
+          description: 8-72 bytes in UTF-8 (bcrypt ignores bytes after 72).
+          minLength: 8
+    User:
+      type: object
+      required:
+        - id
+        - username
+      properties:
+        id:
+          type: integer
+        username:
+          type: string
+    AuthToken:
+      type: object
+      required:
+        - token
+        - expiresAt
+      properties:
+        token:
+          type: string
+          description: HS256-signed JWT, sent as the bearer token in the Authorization header.
+        expiresAt:
+          type: string
+          format: date-time
     Message:
       type: object
       required:
