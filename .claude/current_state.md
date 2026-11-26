@@ -107,10 +107,15 @@ per step (Steps 1–5 written).
   without `sonar.sources`/`sonar.tests`, binaries and `tools/**` excluded.
   Log: `docs/ai_logs.md` Entry 10, "Steps 4 + 5 follow-up".
   - Test classification: SonarQube Cloud ignores `sonar.tests` AND
-    `sonar.test.inclusions` (main scan: "configured but have no effect:
-    sonar.test.inclusions"). It auto-detects tests by a `test/` directory in
-    the path, which covers all our test files. `sonar.test.inclusions` removed
-    from `sonar-project.properties` on `chore/state-cleanup`.
+    `sonar.test.inclusions` (scan: "configured but have no effect … The new
+    analysis scope UX analyzes the whole project by default").
+    `sonar.test.inclusions` removed on `chore/state-cleanup`. CORRECTED
+    (PR #17): the scanner's message lists `test/` directories as a test
+    criterion, but the Dart files in `test/` are still indexed as main code
+    (qualifier `FIL`, e.g. `server_app/test/auth_test.dart` with 150 lines
+    to cover), so they counted toward new-code coverage. Fix:
+    `sonar.coverage.exclusions=**/test/**` (still analyzed for issues). No
+    documented property or UI setting classifies them as tests in this mode.
 - **Branch protection on `main`** — set via `gh api` (classic protection):
   required checks `Backend (analyze + test)`, `Frontend (analyze + test)`,
   `SonarQube Cloud scan` (app GitHub Actions); `strict: false` (branch need not

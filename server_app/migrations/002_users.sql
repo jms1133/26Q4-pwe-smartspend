@@ -7,8 +7,7 @@
 -- categories from 001), so it is deleted instead of being assigned to a
 -- placeholder user. Demo data comes from the seed script; the per-user seed
 -- categories are copied on registration (lib/auth/auth_handlers.dart).
-DELETE FROM expenses;
-DELETE FROM categories;
+TRUNCATE expenses, categories;
 
 CREATE TABLE users (
   id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
