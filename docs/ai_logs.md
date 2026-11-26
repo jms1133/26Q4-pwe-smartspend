@@ -551,4 +551,68 @@ Phase 0 runs as one sequential session. One subsection per step, each using the 
   - `dart test` now requires the `db` container, which the CI pipeline (Step 5) needs as a service container.
   - The shelf server is still not in Compose. In a container it needs `DB_HOST=db`, and the `Dockerfile` (scratch image with only `bin/server`) must also copy `server_app/migrations/`, since the runner reads them from disk relative to the working directory.
 
-<!-- Append Step 4 (SonarQube), Step 5 (GitHub Actions) below in the same format. -->
+### Step 4 – SonarQube: Community Build → SonarQube Cloud (phase0/sonarqube)
+- **Goal:** Static analysis and coverage for `server_app` and `flutter_application` in SonarQube, as a quality signal for the grading and for the security requirement.
+- **Key prompts:**
+  - "check .claude and get ready for step 4" → the agent proposed a `sonarqube` Compose service (profile `sonar`), host scanner, lcov coverage. Julian: "yes".
+  - "I added the sonar token to .env, run the analysis".
+  - After the agent reported that Community Build has no Dart: Julian sent the SonarQube Server Dart page ("SonarQube now includes native support for Dart and Flutter"), then decided "ok lets go public to use the cloud version. check that no secret was ever commited".
+  - "Decision: SonarQube Cloud, replacing the local Community Build … do Step 4 and Step 5 together on the current branch `phase0/sonarqube` as one PR, with separate commits."
+- **AI output:**
+  - First version (removed again in this step): `docker-compose.yml` service `sonarqube` (`sonarqube:26.11.0.134175-community`, profile `sonar`, `127.0.0.1:${SONAR_PORT:-9000}`, healthcheck on `/api/system/status`, three named volumes); SonarScanner CLI 8.4 unpacked to `../dependencies/` (outside the repo); `SONAR_PORT`/`SONAR_TOKEN` in `.env.example`.
+  - Final version: `docker-compose.yml` and `.env.example` are back to their `main` state (only `db`, no `SONAR_*`). `sonar-project.properties` at the repo root: organization `jms1133`, project key `jms1133_26Q4-pwe-smartspend`, sources `server_app/lib`, `server_app/bin`, `server_app/migrations`, `flutter_application/lib`, tests in both `test/` folders, `openapi/**`, build output, `.dart_tool` and `*.g.dart` excluded, `sonar.dart.lcov.reportPaths` for both lcov files. `.gitignore` adds `**/coverage/` and `.scannerwork/`.
+  - Coverage without a new dependency: `dart test --coverage-path=coverage/lcov.info` writes lcov directly (the brief had planned the `coverage` package + `format_coverage`); frontend `flutter test --coverage`.
+- **Wrong assumption in the original brief:** the brief stated "Dart is supported in Community Build". It was based on the SonarQube Community Build language overview page, which marks Dart as supported in Community Build, Cloud and Server. This was not checked against the image before writing the brief.
+- **Finding: the Community Build does not analyze Dart.** Evidence:
+  - Scan output: `0 languages detected in 18 preprocessed files`; only IaC, Text/Secrets and Zero Coverage sensors ran, no Dart sensor; `EXECUTION SUCCESS` despite that.
+  - Container plugins (`/opt/sonarqube/lib/extensions/`): csharp, flex, go, html, iac, jacoco, java, javascript, kotlin, php, python, text, vbnet, xml. No Dart plugin.
+  - Language API `/api/languages/list`: 24 languages, no `dart`. `/api/plugins/installed`: no Dart plugin.
+  - Edition page (sonarsource.com downloads): Community Build lists 22 languages without Dart; "Developer Edition adds: … C, C++, Dart, GitHub Actions …".
+  - SonarQube Server Dart page (the link Julian sent): "Available in: SonarQube Server 2026.5 LTA". The native support is real, but in SonarQube Server (paid) and SonarQube Cloud, not in the Community Build.
+  - The language overview table contradicts the edition page; the scan and the container are the ground truth.
+- **Alternatives considered:**
+  - SonarQube Developer Edition image: native Dart, stays in Compose, but paid; a trial licence would expire before the end of the course.
+  - Community Build + third-party `sonar-flutter` plugin (insideapp): last release 0.5.2 (2023-09-07), built against plugin API 7.9; compatibility with 26.11 unknown.
+  - Community Build for non-Dart files + stricter `dart analyze` lints only: Dart code would not appear in SonarQube at all.
+  - Chosen: SonarQube Cloud. The repo is public, so the Free plan has no LOC limit; analysis runs from CI (Step 5).
+- **Secret audit before relying on a public repo** (the repo turned out to be public since creation, 2026-10-23):
+  - Scope: all 32 commits reachable from local branches, `origin/*` and the GitHub PR heads `refs/pull/1..11/head` (fetched explicitly, because merged PR commits stay readable after branch deletion).
+  - Sensitive paths ever added: only `.env.example` and `server_app/secrets.json.example` (placeholders `sk-your-key-here`, `org-optional`, `proj-optional`).
+  - The real local values (`SONAR_TOKEN`, `POSTGRES_PASSWORD`, `api_token`, `organization_id`, `project_id` from `secrets.json`) were searched as fixed strings in every commit: not found. Values were never printed, only their lengths.
+  - Pattern scan (OpenAI `sk-`, Sonar `sq[apu]_`, GitHub `ghp_`/`github_pat_`, AWS `AKIA`, Google `AIza`, private keys, Slack, JWT): no matches.
+  - GitHub secret scanning and push protection: enabled, 0 alerts.
+  - Noted: 21 of 32 commits carry Julian's work e-mail as author. Not a secret; history was not rewritten.
+- **Problems and corrections:**
+  - The first healthcheck used `wget`, which the SonarQube image (Ubuntu 24.04) does not contain; the container showed `unhealthy` while `/api/system/status` returned `UP`. Changed to `curl`. Moot after the removal.
+  - The scan reported `EXECUTION SUCCESS` although no Dart file was analyzed; success of the scanner run is not evidence of analysis.
+  - The local SonarQube container and its three volumes were removed (`docker compose rm -s -f sonarqube`, `docker volume rm …`). The local token stopped being used; Julian removed it from `.env` and set a personal SonarQube Cloud token as the repository secret `SONAR_TOKEN`.
+- **Verification:**
+  - Local Community Build scan (before the switch): see the evidence list above.
+  - After the switch: `docker compose config --services` → `db` only (also with `--profile sonar`); `.env.example` and `.env` contain 0 `SONAR_` lines; `git check-ignore` covers `.env`, both `coverage/lcov.info` files and `.scannerwork`.
+  - `dart analyze lib test bin` clean, `dart test --coverage-path=coverage/lcov.info` 51/51; `flutter analyze` clean, `flutter test --coverage` 18/18.
+  - **Not verified by the agent:** the first SonarQube Cloud analysis (runs only in CI, Step 5). Julian checks the dashboard for `.dart` files with issues and coverage.
+- **Open questions:**
+  - Server handlers have 0 % coverage: `server_test.dart` starts the server as a subprocess, so only code loaded in the test isolate (`db_config`, `migrations`, `ai_service`) shows up in lcov. Next step: run the server tests in-process (pool created in the test, `buildRouter()` served on port 0).
+  - Whether the Free plan imports Dart coverage as expected is confirmed only by the first CI run.
+
+### Step 5 – GitHub Actions pipeline (phase0/sonarqube, same PR as Step 4)
+- **Goal:** Every push and pull request runs analyze and tests for both apps against a real PostgreSQL and sends the results with coverage to SonarQube Cloud.
+- **Key prompts:** "Add one GitHub Actions workflow, running on push and pull requests: a Postgres 16 service container with a healthcheck, with test credentials set in the workflow rather than from secrets; `dart analyze lib test bin`, then `dart test` with coverage; `flutter analyze`, then `flutter test` with coverage; the SonarQube Cloud scan using `SONAR_TOKEN` from repository secrets."
+- **AI output:** `.github/workflows/ci.yml`, workflow-level `permissions: contents: read`, `concurrency` per ref with cancel-in-progress, `FLUTTER_VERSION: 3.47.7` (the local version, Dart 3.13.5, matching `sdk: ^3.13.5`).
+  - Job `backend`: service container `postgres:16` with `pg_isready` health options, port 5432; job env `DB_HOST=localhost`, `DB_PORT=5432`, `POSTGRES_DB/USER=smart_spend`, `POSTGRES_PASSWORD=ci-test-only` (a throwaway value for a container that only lives during the job, not a secret). `subosito/flutter-action@v2` provides `dart`. Steps: `dart pub get`, `dart analyze lib test bin`, `dart test --coverage-path=coverage/lcov.info`, upload `coverage-backend`.
+  - Job `frontend`: `flutter pub get`, `flutter analyze`, `flutter test --coverage`, upload `coverage-frontend`.
+  - Job `sonar` (`needs: [backend, frontend]`): checkout with `fetch-depth: 0` (blame data for new-code detection), Flutter setup and `pub get` in both apps (SonarSource: dependencies must be resolved for the Dart analysis), download both lcov artifacts, rewrite the frontend `SF:lib/…` paths to absolute workspace paths (the backend lcov already has absolute paths), then `SonarSource/sonarqube-scan-action@v8` (runs on the runner as a Node action, not in Docker, so it sees the SDK and `.dart_tool/`). Organization and project key come from `sonar-project.properties`.
+  - The scan steps are skipped with a notice when `SONAR_TOKEN` is empty (pull requests from forks get no secrets), so those runs still report analyze/test results.
+- **Alternatives considered:**
+  - `dart-lang/setup-dart` for the backend: rejected, one Flutter setup gives the same Dart SDK for both apps, so local and CI versions match.
+  - Running the scan inside the `backend`/`frontend` jobs: rejected, one scan with both lcov files gives one project view.
+  - Test DB credentials from secrets: rejected per brief; the service container is ephemeral.
+  - Docker Compose inside CI: rejected, the service container gives the same `postgres:16` with less setup.
+- **Problems and corrections:** Action versions were checked against the GitHub releases API instead of being assumed (checkout v7.0.1, sonarqube-scan-action v8.5.1, upload-artifact v7.0.2, download-artifact v8.0.2, flutter-action v2.23.0; majors pinned).
+- **Verification:**
+  - `actionlint` 1.7.12 (run from `/tmp`, not added to the repo): no findings.
+  - The commands in the workflow are the ones run locally: 51/51 backend, 18/18 frontend, both analyzers clean.
+  - **Not verified by the agent:** the actual Actions run. Julian pushes the branch and checks that all three jobs are green and the scan uploads.
+- **Open questions:**
+  - Branch protection (required checks) and Dependabot are not configured yet.
+  - README rewrite as a separate `docs/readme` step (README is currently a copy of `CLAUDE.md`).

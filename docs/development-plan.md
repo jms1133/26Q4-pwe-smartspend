@@ -18,7 +18,7 @@ Expense tracker for the module "Projekt Web-Entwicklung": Flutter client (web, l
 - **Backend:** Existing Dart `shelf` / `shelf_router` server. Login, tokens and per-user data are implemented here.
 - **Database:** Migrate from SQLite to PostgreSQL, running in Docker. The server is the only component with database credentials.
 - **Mobile offline cache:** Small local SQLite database on Android (`sqflite` or `drift`) that syncs with the server when online.
-- **Containers:** Docker Compose with PostgreSQL, the shelf server and SonarQube. Flutter itself is not containerized.
+- **Containers:** Docker Compose with PostgreSQL and the shelf server. Flutter itself is not containerized. Code analysis runs in SonarQube Cloud from CI, not in Compose.
 - **Contract first:** Every API change goes into `api.yaml` first, then the client is regenerated. `/openapi` is never edited by hand.
 
 ## Features (in dependency order)
@@ -85,7 +85,7 @@ The app gets a consistent character: a grumpy uncle who is an accountant by prof
 
 **Verification**
 
-- SonarQube or SonarCloud (verify current Dart support) plus `dart analyze` / `flutter analyze` with strict lints.
+- SonarQube Cloud (Dart is not in the free Community Build, see Step 4) plus `dart analyze` / `flutter analyze` with strict lints.
 - Dependabot for vulnerable or outdated packages.
 - Isolation tests: user A cannot read, edit or delete user B's expenses.
 
@@ -118,10 +118,32 @@ Parallel Claude Code sessions, each in its own git worktree and branch (`claude 
 
 **Phase 0 – one session, sequential (comes before all other phases):**
 
-- Docker Compose with PostgreSQL and SonarQube.
+- Docker Compose with PostgreSQL.
 - Migrate the DB layer from SQLite to PostgreSQL.
 - Make the test server port configurable (`server_test.dart` currently uses fixed port 8082, which would collide between agents).
 - Basic GitHub Actions pipeline.
+
+**Steps 4 + 5 – SonarQube Cloud and GitHub Actions** · branch `phase0/sonarqube` from `main`, one PR with separate commits (combined because the presentation is on 1 December)
+Goal: every push and pull request runs analyze and tests for both apps and a SonarQube Cloud scan that shows Dart issues and coverage.
+Agreed decisions:
+1. SonarQube Cloud replaces the local Community Build. Revised: the first version added a `sonarqube:26.11.0.134175-community` service to Compose, but Dart analysis is not part of the Community Build (only Developer Edition and up, and SonarQube Cloud). The `sonarqube` service and its volumes are removed again; Compose runs only `db`. Repo is public, so the Cloud Free plan has no LOC limit. Organization `jms1133`, project key `jms1133_26Q4-pwe-smartspend`, Automatic Analysis off (CI-based analysis, required for coverage import).
+2. (dropped) Embedded H2 database for local SonarQube; no local SonarQube any more.
+3. (dropped) Local port, healthcheck and volumes; no local SonarQube any more.
+4. Revised: the scanner runs only in CI via `SonarSource/sonarqube-scan-action` (runs on the runner, so it sees the Dart SDK and `.dart_tool/`). No local scanner runs; `SONAR_TOKEN` is a GitHub Actions repository secret only and is not in `.env` or `.env.example`.
+5. One `sonar-project.properties` at the repo root for both apps: `sonar.organization`, project key; sources `server_app/lib`, `server_app/bin`, `server_app/migrations`, `flutter_application/lib`; tests in both `test/` folders; `openapi/**`, build output and `*.g.dart` excluded.
+6. Revised: coverage via lcov without a new dependency: backend `dart test --coverage-path=coverage/lcov.info`, frontend `flutter test --coverage`; both paths in `sonar.dart.lcov.reportPaths`. `**/coverage/` and `.scannerwork/` are git-ignored.
+7. Revised: no local token. The token is a personal SonarQube Cloud token stored as the repository secret `SONAR_TOKEN`.
+8. Workflow `.github/workflows/ci.yml` on `push` and `pull_request`. Jobs: `backend` (Postgres 16 service container with `pg_isready` healthcheck, test credentials set in the workflow, not from secrets; `dart analyze lib test bin`, `dart test` with coverage), `frontend` (`flutter analyze`, `flutter test --coverage`), `sonar` (needs both, downloads their lcov artifacts, runs the scan with `SONAR_TOKEN`). Flutter version pinned to the local one (3.47.7), which also provides the Dart SDK for the backend.
+9. The scan is skipped when `SONAR_TOKEN` is unavailable (pull requests from forks get no secrets), so those runs still show analyze/test results.
+Out of scope: fixing findings (Phase 4), stricter lint sets, shelf server in Compose, Dependabot, branch protection.
+Open points (next steps): server handlers show 0 % coverage because `server_test.dart` runs the server as a subprocess; next step moves the server tests in-process (pool created in the test, `buildRouter()` served on port 0). README rewrite as a separate `docs/readme` step.
+Done:
+1. `dart analyze` and `flutter analyze` clean locally, `dart test` and `flutter test` green locally (show output).
+2. Compose starts only `db`; `.env.example` has no `SONAR_*` entries.
+3. Workflow file valid; each job and step explained.
+4. (Julian) branch pushed: the Actions run is green, including the scan step.
+5. (Julian) SonarQube Cloud dashboard shows `.dart` files with issues and coverage.
+6. Brief, AI log (Entry 10, Steps 4 and 5) and `current_state.md` updated.
 
 **Phase 1 – parallel:**
 
