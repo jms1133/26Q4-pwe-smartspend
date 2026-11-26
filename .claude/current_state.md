@@ -139,21 +139,19 @@ per step (Steps 1–5 written).
 ## Branch State
 
 - `main` — all of Phase 0 (PR #9–#12, #15) + Step 6 (PR #16, `715d9e0`) +
-  Step 7 login backend (PR #17, merge commit `c1a4488`), protected.
+  Step 7 login backend (PR #17, merge commit `c1a4488`) + state update
+  (PR #18, merge commit `dc20c59` = HEAD), protected. No other branches
+  locally or on the remote; no open PRs.
 - **`main` requires login since `c1a4488`.** Every route except `OPTIONS`
   preflights, `/` and `/auth/*` returns 401 without a token, and the
   Flutter app on `main` sends none, so it gets 401 everywhere until Step 8
   merges. This deviates from decision C in `docs/development-plan.md` Step 7
   (back-to-back merge of backend and UI PRs). Demo fallback: tag
-  `pre-login`. Not created yet (no tags local or remote); the last
-  pre-login commit on `main` is `715d9e0` (Julian:
-  `git tag pre-login 715d9e0 && git push origin pre-login`).
-- `feature/login-backend` — MERGED (PR #17), deleted on the remote; local
-  branch can be deleted (`git branch -d feature/login-backend`).
-- Step 8 `feature/login-ui` branches from `main` (at or after `c1a4488`),
+  `pre-login` on `715d9e0` (last pre-login commit), pushed to the remote.
+- `feature/login-backend` (PR #17) and `chore/state-after-login-backend`
+  (PR #18): merged and deleted locally and on the remote.
+- Step 8 `feature/login-ui` branches from `main` (`dc20c59` or later),
   NOT from `feature/login-backend`.
-- `chore/state-after-login-backend` — from `main` (`c1a4488`): this file's
-  update after PR #17. Julian pushes, opens the PR and merges after green CI.
 - Step 7 summary: `migrations/002_users.sql` (deletes dev expenses/categories,
   `users`, per-user categories, composite FK `expenses_user_category_fkey`),
   `lib/auth/` (AuthConfig, PasswordHasher in `Isolate.run`, TokenService
@@ -195,6 +193,10 @@ per step (Steps 1–5 written).
    course; minor/patch PRs may still hit this. Options later: regenerate the
    lockfile on the Dependabot branch locally (`flutter pub get`, commit), or
    pin Dependabot's Flutter version if it becomes configurable.
+8. **`pre-login` fallback needs its own empty database.** The dev DB
+   `smart_spend` is at schema 2 after migration 002; the `pre-login` code
+   (`715d9e0`) expects schema 1, so run it against a separate empty DB
+   (e.g. `POSTGRES_DB=smart_spend_prelogin`).
 
 Still open: the shelf server is not in Compose (needs `DB_HOST=db` and
 `migrations/` copied into the image).
