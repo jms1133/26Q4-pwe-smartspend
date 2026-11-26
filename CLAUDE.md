@@ -18,6 +18,7 @@ Roadmap and agent phases: `docs/development-plan.md` (read when starting a phase
 - `docs/` – `documentation.md` (Ausarbeitung, German), `ai_logs.md` (AI logs),
   `ai_engineering_journal.md` (Julian's own journal)
 - Database: PostgreSQL 16 via Docker Compose (`docker compose up -d --wait`); server reads `POSTGRES_*`/`DB_PORT`/`DB_HOST` from env or the repo-root `.env`. `dart test` needs the `db` container running.
+- CI: `.github/workflows/ci.yml` (analyze + tests for both apps, Postgres service container) and a SonarQube Cloud scan (`sonar-project.properties`, token only as GitHub secret `SONAR_TOKEN`). No local SonarQube: the Community Build has no Dart analyzer.
 
 ## Rules
 1. **MoSCoW:** Must-haves before Should/Could. Follow the order in the development plan.
@@ -32,6 +33,9 @@ Roadmap and agent phases: `docs/development-plan.md` (read when starting a phase
    or after merging. Parallel agents never edit it.
 7. **Hidden framework behavior:** Point out when `notifyListeners()` is needed, and explain
    CORS, shelf_router and async request handling when relevant.
+8. **Identity:** Never write the email address of the logged-in Claude account into
+   code, docs, logs, commit messages or PR descriptions. If attribution is needed,
+   use the GitHub account `jms1133` only, with no email address.
 
 ## Workflow
 9. **Session start:** compare `.claude/current_state.md` with `git status` and

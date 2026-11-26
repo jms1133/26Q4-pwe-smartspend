@@ -1,8 +1,8 @@
 # Current State — Claude Context & Handoff
 
 > Single source of truth for picking up where the last session left off.
-> Read this FIRST, then `.claude/CLAUDE.md`, `.claude/learning-directives.md`,
-> and `.claude/project-plan.md`. Keep this file current at the end of a session.
+> Imported by the repo-root `CLAUDE.md`. Roadmap and step briefs live in
+> `docs/development-plan.md`. Keep this file current at the end of a session.
 >
 > This file holds *operational* state (branches, what's done, next steps). The
 > deep per-feature reflections live in `/docs/ai_engineering_journal.md`, which
@@ -77,7 +77,7 @@
 ## Phase 0 — Infrastructure (in progress, see `docs/development-plan.md`)
 
 Logged in `docs/ai_logs.md` Entry 10 "Phase 0: Infrastructure", one subsection
-per step. Append Steps 3–5 there (marker comment at the end of the entry).
+per step (Steps 1–5 written).
 
 - **Step 1 — Configurable test port** — MERGED (PR #9). `server_test.dart`
   starts the server with `PORT=0` + `DB_PATH=':memory:'`, parses the bound port
@@ -90,26 +90,58 @@ per step. Append Steps 3–5 there (marker comment at the end of the entry).
   git-ignored, template `.env.example` committed. `.worktreeinclude` copies
   `.env` + `server_app/secrets.json` into agent worktrees. Live-checked:
   healthy, PostgreSQL 16.14. Also fixed the timeout message (15s → 30s).
-- **Step 3 — SQLite → PostgreSQL migration of the DB layer** — NEXT.
-- **Step 4 — SonarQube** in Compose — pending.
-- **Step 5 — Basic GitHub Actions pipeline** — pending.
+- **Step 3 — SQLite → PostgreSQL migration of the DB layer** — MERGED (PR #11).
+  `postgres` package, `db_config.dart` (env or repo-root `.env`), own migration
+  runner (`migrations/NNN_*.sql`, `schema_version` table), `NUMERIC(12,2)`
+  amounts, functional unique index `lower(name)` on categories, find-or-create
+  via `ON CONFLICT … DO UPDATE … RETURNING`. Tests: fresh random
+  `smart_spend_test_*` DB per server test, dropped afterwards. 51/51 green.
+  Details in `docs/ai_logs.md` Entry 10, Step 3.
+- **Steps 4 + 5 — SonarQube Cloud + GitHub Actions** — pushed on
+  `phase0/sonarqube`, **PR #12 open**, first CI run green, scan
+  `ANALYSIS SUCCESSFUL`. The first scan raised 8 MAJOR issues in `ci.yml`
+  (S7637 actions not pinned to SHA, S8550 `pub get` without lockfile). Fixed
+  locally, not committed yet: all actions pinned to full SHAs (tag as comment),
+  `server_app/pubspec.lock` now tracked, `--enforce-lockfile` on every
+  `pub get`, `.github/dependabot.yml` (actions + pub, weekly),
+  `sonar-project.properties` without `sonar.sources`/`sonar.tests`, binaries
+  and `tools/**` excluded. Log: `docs/ai_logs.md` Entry 10, "Steps 4 + 5
+  follow-up".
+  - Local SonarQube Community Build was tried and REMOVED: it has no Dart
+    analyzer (no plugin in the image, no `dart` language, scan "0 languages
+    detected"). Dart is Developer Edition+ / SonarQube Cloud only.
+  - SonarQube Cloud: org `jms1133`, project `jms1133_26Q4-pwe-smartspend`,
+    Automatic Analysis off, `SONAR_TOKEN` = GitHub repo secret only (not in
+    `.env`/`.env.example`). Config in `sonar-project.properties`.
+  - `.github/workflows/ci.yml`: jobs `backend` (postgres:16 service, analyze,
+    `dart test --coverage-path`), `frontend` (analyze, `flutter test
+    --coverage`), `sonar` (needs both, lcov artifacts, scan action v8; skipped
+    without token). Flutter pinned 3.47.7.
+  - Secret audit of all 32 commits incl. PR refs: clean. Repo is public since
+    creation; GitHub secret scanning + push protection on, 0 alerts.
 
 ## Branch State
 
-- `main` — everything above, including Phase 0 Steps 1–2 (PR #9, PR #10).
-- `phase0/configurable-test-port`, `phase0/docker-compose-postgres` — merged;
-  local + remote branches can be deleted.
+- `main` — everything above, including Phase 0 Steps 1–3 (PR #9, #10, #11).
+- `phase0/sonarqube` — Steps 4 + 5, branched from `main` (`bf73c64`); carries
+  the cherry-picked "updated plan, logs" commit (step brief template). Pushed,
+  PR #12 open. Uncommitted: the SonarQube findings fix (see above).
+- All earlier Phase 0 branches deleted locally and on the remote.
 
-## Resume Here (Phase 0, Step 3: PostgreSQL migration)
+## Resume Here
 
-Migrate `server_app/lib/db/` from SQLite (`sqlite3`) to PostgreSQL. Open points:
-- Server reads DB connection config (host/port/db/user/password) from env,
-  matching the names in `.env.example`.
-- Tests currently use SQLite `:memory:` for isolation; decide how tests get an
-  isolated PostgreSQL DB (e.g. separate DB name per run/agent) without
-  breaking parallel agents.
-- SQLite specifics to port: `COLLATE NOCASE UNIQUE` on `categories.name`
-  (case-insensitive find-or-create), autoincrement ids, timestamp handling.
+1. Commit + push the SonarQube findings fix, then check CI and the PR #12
+   issues (`curl -s "https://sonarcloud.io/api/issues/search?componentKeys=jms1133_26Q4-pwe-smartspend&pullRequest=12"`,
+   expect 0 S7637/S8550). Done items 4, 5, 8 of the brief; then merge.
+2. **Next step: in-process server tests.** Server handlers show 0 % coverage
+   because `server_test.dart` runs the server as a subprocess. Move the tests
+   in-process: create the pool in the test, serve `buildRouter()` on port 0.
+3. **`docs/readme` step:** rewrite `README.md` (currently a copy of
+   `CLAUDE.md`) as a real project README.
+
+Still open: the shelf server is not in Compose (needs `DB_HOST=db` and
+`migrations/` copied into the image); branch protection and Dependabot not
+configured. Dependabot config added in the findings fix.
 
 After Phase 0: **Login system** (`docs/development-plan.md` feature 2): `users`
 table, password hashing, register/login endpoints, JWT, auth middleware,
@@ -125,6 +157,15 @@ similarity dedup remains descoped.
 
 ## Verification (last run)
 
+- Steps 4 + 5 findings fix: `actionlint` (Docker `rhysd/actionlint`) clean;
+  `pub get --enforce-lockfile` OK in both apps; both analyzers clean;
+  `dart test` 51/51, `flutter test` 18/18. CI after the fix: not yet run.
+- Phase 0 Steps 4 + 5: `docker compose config --services` → `db` only;
+  `dart analyze lib test bin` clean, `dart test --coverage-path=…` 51/51;
+  `flutter analyze` clean, `flutter test --coverage` 18/18; `actionlint` clean.
+  CI run and SonarQube Cloud: not yet verified (Julian).
+- Phase 0 Step 3: `dart analyze lib test bin` clean, `dart test` 51/51 against
+  a throwaway Compose project; manual smoke test on an empty DB.
 - Phase 0 Step 2: `docker compose config` fails without `POSTGRES_PASSWORD`;
   `up -d --wait` → healthy; backend `dart analyze lib test` clean, `dart test`
   24/24 (after the 30s message fix).
@@ -140,9 +181,9 @@ similarity dedup remains descoped.
 
 ## Immediate Next Steps (in order)
 
-1. **Phase 0 Step 3** — PostgreSQL migration (see "Resume Here").
-2. **Phase 0 Step 4** — SonarQube in `docker-compose.yml`.
-3. **Phase 0 Step 5** — basic GitHub Actions pipeline.
+1. Merge `phase0/sonarqube` after a green CI run (see "Resume Here").
+2. In-process server tests (handler coverage).
+3. `docs/readme` step.
 4. **Login system**, then the remaining features in `docs/development-plan.md`
    order (Login UI → redesign → sync → Android).
 5. **`docs/documentation.md`** (German, 30% of grade) — still has TODOs for the

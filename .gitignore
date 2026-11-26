@@ -13,6 +13,10 @@ Thumbs.db
 .idea/
 *.swp
 
+# Coverage reports and SonarScanner work directory
+**/coverage/
+.scannerwork/
+
 .claude/settings.local.json
 .claude/worktrees/
 docs/archive/
