@@ -269,7 +269,7 @@ class DefaultApi {
     }
   }
 
-  /// List all known expense categories
+  /// List the current user's categories
   ///
   /// Note: This method returns the HTTP [Response].
   Future<Response> listCategoriesWithHttpInfo() async {
@@ -297,7 +297,7 @@ class DefaultApi {
     );
   }
 
-  /// List all known expense categories
+  /// List the current user's categories
   Future<List<Category>?> listCategories() async {
     final response = await listCategoriesWithHttpInfo();
     if (response.statusCode >= HttpStatus.badRequest) {
@@ -316,7 +316,7 @@ class DefaultApi {
     return null;
   }
 
-  /// List all expenses
+  /// List the current user's expenses
   ///
   /// Note: This method returns the HTTP [Response].
   Future<Response> listExpensesWithHttpInfo() async {
@@ -344,7 +344,7 @@ class DefaultApi {
     );
   }
 
-  /// List all expenses
+  /// List the current user's expenses
   Future<List<Expense>?> listExpenses() async {
     final response = await listExpensesWithHttpInfo();
     if (response.statusCode >= HttpStatus.badRequest) {
@@ -359,6 +359,110 @@ class DefaultApi {
         .cast<Expense>()
         .toList(growable: false);
 
+    }
+    return null;
+  }
+
+  /// Log in and receive a bearer token
+  ///
+  /// Note: This method returns the HTTP [Response].
+  ///
+  /// Parameters:
+  ///
+  /// * [Credentials] credentials (required):
+  Future<Response> loginWithHttpInfo(Credentials credentials,) async {
+    // ignore: prefer_const_declarations
+    final path = r'/auth/login';
+
+    // ignore: prefer_final_locals
+    Object? postBody = credentials;
+
+    final queryParams = <QueryParam>[];
+    final headerParams = <String, String>{};
+    final formParams = <String, String>{};
+
+    const contentTypes = <String>['application/json'];
+
+
+    return apiClient.invokeAPI(
+      path,
+      'POST',
+      queryParams,
+      postBody,
+      headerParams,
+      formParams,
+      contentTypes.isEmpty ? null : contentTypes.first,
+    );
+  }
+
+  /// Log in and receive a bearer token
+  ///
+  /// Parameters:
+  ///
+  /// * [Credentials] credentials (required):
+  Future<AuthToken?> login(Credentials credentials,) async {
+    final response = await loginWithHttpInfo(credentials,);
+    if (response.statusCode >= HttpStatus.badRequest) {
+      throw ApiException(response.statusCode, await _decodeBodyBytes(response));
+    }
+    // When a remote server returns no body with a status of 204, we shall not decode it.
+    // At the time of writing this, `dart:convert` will throw an "Unexpected end of input"
+    // FormatException when trying to decode an empty string.
+    if (response.body.isNotEmpty && response.statusCode != HttpStatus.noContent) {
+      return await apiClient.deserializeAsync(await _decodeBodyBytes(response), 'AuthToken',) as AuthToken;
+    
+    }
+    return null;
+  }
+
+  /// Register a new user account
+  ///
+  /// Note: This method returns the HTTP [Response].
+  ///
+  /// Parameters:
+  ///
+  /// * [Credentials] credentials (required):
+  Future<Response> registerWithHttpInfo(Credentials credentials,) async {
+    // ignore: prefer_const_declarations
+    final path = r'/auth/register';
+
+    // ignore: prefer_final_locals
+    Object? postBody = credentials;
+
+    final queryParams = <QueryParam>[];
+    final headerParams = <String, String>{};
+    final formParams = <String, String>{};
+
+    const contentTypes = <String>['application/json'];
+
+
+    return apiClient.invokeAPI(
+      path,
+      'POST',
+      queryParams,
+      postBody,
+      headerParams,
+      formParams,
+      contentTypes.isEmpty ? null : contentTypes.first,
+    );
+  }
+
+  /// Register a new user account
+  ///
+  /// Parameters:
+  ///
+  /// * [Credentials] credentials (required):
+  Future<User?> register(Credentials credentials,) async {
+    final response = await registerWithHttpInfo(credentials,);
+    if (response.statusCode >= HttpStatus.badRequest) {
+      throw ApiException(response.statusCode, await _decodeBodyBytes(response));
+    }
+    // When a remote server returns no body with a status of 204, we shall not decode it.
+    // At the time of writing this, `dart:convert` will throw an "Unexpected end of input"
+    // FormatException when trying to decode an empty string.
+    if (response.body.isNotEmpty && response.statusCode != HttpStatus.noContent) {
+      return await apiClient.deserializeAsync(await _decodeBodyBytes(response), 'User',) as User;
+    
     }
     return null;
   }

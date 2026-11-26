@@ -30,12 +30,15 @@ part 'auth/http_bearer_auth.dart';
 
 part 'api/default_api.dart';
 
+part 'model/auth_token.dart';
 part 'model/category.dart';
 part 'model/category_input.dart';
 part 'model/classify_input.dart';
+part 'model/credentials.dart';
 part 'model/expense.dart';
 part 'model/expense_input.dart';
 part 'model/message.dart';
+part 'model/user.dart';
 
 
 /// An [ApiClient] instance that uses the default values obtained from
