@@ -1,15 +1,22 @@
 import 'dart:convert';
 import 'dart:io';
+
 import 'package:postgres/postgres.dart';
 import 'package:shelf/shelf.dart';
 import 'package:openapi/api.dart';
+import 'package:server_app/auth/auth_middleware.dart';
 import 'package:server_app/handlers/category_handlers.dart';
 import 'package:server_app/services/ai_service.dart';
 
-/// Columns returned by every expense query, in one place so SELECT and
-/// RETURNING stay in sync with [_rowToExpense].
+/// Select list of every expense query, in one place so all of them stay in
+/// sync with [_rowToExpense]. Expects the expense row as `e` and its category
+/// as `c`: the table stores `category_id`, the API returns the name.
 const _expenseColumns =
-    'id, title, category, subcategory, description, amount, timestamp';
+    'e.id, e.title, c.name AS category, e.subcategory, '
+    'e.description, e.amount, e.timestamp';
+
+/// Joins the category name onto the expense rows named `e`.
+const _joinCategory = 'JOIN categories c ON c.id = e.category_id';
 
 /// Converts a single PostgreSQL [ResultRow] into the generated [Expense] model.
 ///
@@ -67,9 +74,17 @@ String? _amountToNumeric(double amount) {
   return fixed;
 }
 
+/// Every query below filters by the user id from the request context, set
+/// by the auth middleware from the verified token. Another user's expense
+/// therefore looks exactly like a nonexistent one (404).
 Future<Response> listExpensesHandler(Request request, Session db) async {
   final rows = await db.execute(
-    'SELECT $_expenseColumns FROM expenses ORDER BY timestamp DESC, id DESC',
+    Sql.named('''
+      SELECT $_expenseColumns FROM expenses e $_joinCategory
+      WHERE e.user_id = @userId
+      ORDER BY e.timestamp DESC, e.id DESC
+    '''),
+    parameters: {'userId': userIdOf(request)},
   );
   final expenses = rows.map(_rowToExpense).toList();
 
@@ -81,6 +96,7 @@ Future<Response> listExpensesHandler(Request request, Session db) async {
 
 Future<Response> createExpenseHandler(Request request, Session db) async {
   try {
+    final userId = userIdOf(request);
     final input = _parseExpenseInput(jsonDecode(await request.readAsString()));
     if (input == null) {
       return Response.badRequest(body: 'Invalid expense payload.');
@@ -91,23 +107,31 @@ Future<Response> createExpenseHandler(Request request, Session db) async {
     }
 
     // Find-or-create the category so a new one (from the AI or the user)
-    // is registered. We store the canonical name from the categories table
-    // so casing stays consistent across expenses.
-    final (:category, created: _) =
-        await findOrCreateCategory(db, input.category);
+    // is registered for this user; the expense references it by id.
+    final (:category, created: _) = await findOrCreateCategory(
+      db,
+      userId,
+      input.category,
+    );
 
-    // `timestamp` is filled by the column DEFAULT now(). RETURNING hands back
-    // the stored row in the same round trip, replacing SQLite's
-    // lastInsertRowId + a second SELECT.
+    // `timestamp` is filled by the column DEFAULT now(). The CTE hands the
+    // inserted row to the SELECT, which joins the category name, all in one
+    // round trip.
     final rows = await db.execute(
       Sql.named('''
-        INSERT INTO expenses (title, category, subcategory, description, amount)
-        VALUES (@title, @category, @subcategory, @description, @amount)
-        RETURNING $_expenseColumns
+        WITH e AS (
+          INSERT INTO expenses
+            (user_id, category_id, title, subcategory, description, amount)
+          VALUES
+            (@userId, @categoryId, @title, @subcategory, @description, @amount)
+          RETURNING *
+        )
+        SELECT $_expenseColumns FROM e $_joinCategory
       '''),
       parameters: {
+        'userId': userId,
+        'categoryId': category['id'],
         'title': input.title,
-        'category': category['name'],
         'subcategory': input.subcategory,
         'description': input.description,
         'amount': TypedValue(Type.numeric, amount),
@@ -132,14 +156,15 @@ Future<Response> updateExpenseHandler(
   String idParam,
 ) async {
   try {
+    final userId = userIdOf(request);
     final id = int.tryParse(idParam);
     if (id == null) {
       return Response.badRequest(body: 'Invalid expense id.');
     }
 
     final existing = await db.execute(
-      Sql.named('SELECT 1 FROM expenses WHERE id = @id'),
-      parameters: {'id': id},
+      Sql.named('SELECT 1 FROM expenses WHERE id = @id AND user_id = @userId'),
+      parameters: {'id': id, 'userId': userId},
     );
     if (existing.isEmpty) {
       return Response.notFound('Expense not found.');
@@ -154,21 +179,29 @@ Future<Response> updateExpenseHandler(
       return Response.badRequest(body: 'Field "amount" is out of range.');
     }
 
-    final (:category, created: _) =
-        await findOrCreateCategory(db, input.category);
+    final (:category, created: _) = await findOrCreateCategory(
+      db,
+      userId,
+      input.category,
+    );
 
     final rows = await db.execute(
       Sql.named('''
-        UPDATE expenses
-        SET title = @title, category = @category, subcategory = @subcategory,
-            description = @description, amount = @amount
-        WHERE id = @id
-        RETURNING $_expenseColumns
+        WITH e AS (
+          UPDATE expenses
+          SET title = @title, category_id = @categoryId,
+              subcategory = @subcategory, description = @description,
+              amount = @amount
+          WHERE id = @id AND user_id = @userId
+          RETURNING *
+        )
+        SELECT $_expenseColumns FROM e $_joinCategory
       '''),
       parameters: {
         'id': id,
+        'userId': userId,
+        'categoryId': category['id'],
         'title': input.title,
-        'category': category['name'],
         'subcategory': input.subcategory,
         'description': input.description,
         'amount': TypedValue(Type.numeric, amount),
@@ -212,10 +245,16 @@ Future<Response> classifyHandler(
       return Response.badRequest(body: 'Field "text" must not be empty.');
     }
 
-    // Pass the current categories so the AI prefers an existing one over a
-    // near-duplicate (synonym-sprawl mitigation).
-    final categoryRows =
-        await db.execute('SELECT name FROM categories ORDER BY lower(name)');
+    // Pass the user's own categories so the AI prefers an existing one over
+    // a near-duplicate (synonym-sprawl mitigation). Other users' categories
+    // stay private.
+    final categoryRows = await db.execute(
+      Sql.named(
+        'SELECT name FROM categories WHERE user_id = @userId '
+        'ORDER BY lower(name)',
+      ),
+      parameters: {'userId': userIdOf(request)},
+    );
     final knownCategories = categoryRows.map((r) => r[0] as String).toList();
 
     String? rawResponse;
@@ -258,7 +297,8 @@ void _logClassification({
   required ExpenseInput input,
 }) {
   try {
-    final path = Platform.environment['CLASSIFICATION_LOG'] ??
+    final path =
+        Platform.environment['CLASSIFICATION_LOG'] ??
         '../docs/classification_log.jsonl';
     final knownLower = knownCategories.map((c) => c.toLowerCase()).toSet();
     final wasNew = !knownLower.contains(input.category.toLowerCase());
@@ -274,10 +314,8 @@ void _logClassification({
       'parsed_amount': input.amount,
       'was_new_category': wasNew,
     };
-    File(path).writeAsStringSync(
-      '${jsonEncode(record)}\n',
-      mode: FileMode.append,
-    );
+    File(path)
+        .writeAsStringSync('${jsonEncode(record)}\n', mode: FileMode.append);
   } catch (e) {
     print('Classification log write failed (non-fatal): $e');
   }
@@ -296,8 +334,8 @@ Future<Response> deleteExpenseHandler(
   // affectedRows replaces the separate existence check: one statement, and
   // no window for a concurrent delete between check and delete.
   final result = await db.execute(
-    Sql.named('DELETE FROM expenses WHERE id = @id'),
-    parameters: {'id': id},
+    Sql.named('DELETE FROM expenses WHERE id = @id AND user_id = @userId'),
+    parameters: {'id': id, 'userId': userIdOf(request)},
   );
   if (result.affectedRows == 0) {
     return Response.notFound('Expense not found.');
